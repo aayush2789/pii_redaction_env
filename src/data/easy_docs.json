@@ -1,0 +1,20 @@
+[
+  {
+    "id": "easy_doc_001",
+    "text": "Contact john.doe@email.com or call 555-0123 at 77 Market Street.",
+    "entities": [
+      {"label": "EMAIL", "start": 8, "end": 26, "text": "john.doe@email.com"},
+      {"label": "PHONE", "start": 34, "end": 42, "text": "555-0123"},
+      {"label": "ADDRESS", "start": 46, "end": 62, "text": "77 Market Street"}
+    ]
+  },
+  {
+    "id": "easy_doc_002",
+    "text": "Employee Jane Roe lives at 12 Pine Ave. Email: jane.roe@corp.com",
+    "entities": [
+      {"label": "NAME", "start": 9, "end": 17, "text": "Jane Roe"},
+      {"label": "ADDRESS", "start": 27, "end": 38, "text": "12 Pine Ave"},
+      {"label": "EMAIL", "start": 47, "end": 64, "text": "jane.roe@corp.com"}
+    ]
+  }
+]

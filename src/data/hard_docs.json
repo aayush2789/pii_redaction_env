@@ -1,0 +1,18 @@
+[
+  {
+    "id": "hard_doc_001",
+    "text": "Chat: reach john dot smith at gmail dot com; alt phone five five five-0199.",
+    "entities": [
+      {"label": "EMAIL", "start": 12, "end": 43, "text": "john dot smith at gmail dot com"},
+      {"label": "PHONE", "start": 55, "end": 73, "text": "five five five-0199"}
+    ]
+  },
+  {
+    "id": "hard_doc_002",
+    "text": "Ticket note: my wife Sarah said contact Apple support at 1 (800) 555-1212.",
+    "entities": [
+      {"label": "NAME", "start": 21, "end": 26, "text": "Sarah"},
+      {"label": "PHONE", "start": 56, "end": 72, "text": "1 (800) 555-1212"}
+    ]
+  }
+]
