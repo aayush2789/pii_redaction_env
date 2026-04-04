@@ -56,18 +56,24 @@ Final task score combines quality and usefulness:
 ### Easy: `gdpr_contract_easy`
 Pattern-heavy synthetic contracts with obvious emails, phones, addresses.
 - Regex-based approaches can perform well.
+- Objective: redact obvious PII with high precision and minimal over-redaction.
 - Success threshold: 0.90
 
 ### Medium: `hipaa_medical_medium`
 Medical-style notes with contextual entities (names, DOB, phone/address references).
 - Requires context-aware extraction.
+- Objective: identify contextual patient identifiers and redact them without removing clinical text.
 - Success threshold: 0.85
 
 ### Hard: `security_logs_hard`
 Adversarial support logs with obfuscation and ambiguity.
 - Example: `john dot smith at gmail dot com`
 - Ambiguous references and nested mentions.
+- Objective: catch obfuscated PII while avoiding false positives on company names and ordinary references.
 - Success threshold: 0.75
+
+Each task uses a deterministic grader with a normalized score in the inclusive range $[0, 1]$.
+The final score is a weighted blend of exactness and utility, so an agent must balance recall against over-redaction.
 
 ## Project Structure
 

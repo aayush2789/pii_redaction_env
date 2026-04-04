@@ -57,7 +57,7 @@ def compute_grade(
     else:
         utility_score = 1.0
 
-    score = 0.7 * f1 + 0.3 * utility_score
+    score = max(0.0, min(1.0, 0.7 * f1 + 0.3 * utility_score))
     success = score >= success_threshold
 
     components: Dict[str, float] = {
@@ -71,10 +71,10 @@ def compute_grade(
     return TaskGrade(
         task_id=task_id,
         score=round(score, 4),
-        f1_final=round(f1, 4),
-        precision=round(precision, 4),
-        recall=round(recall, 4),
-        utility_score=round(utility_score, 4),
+        f1_final=round(max(0.0, min(1.0, f1)), 4),
+        precision=round(max(0.0, min(1.0, precision)), 4),
+        recall=round(max(0.0, min(1.0, recall)), 4),
+        utility_score=round(max(0.0, min(1.0, utility_score)), 4),
         success=success,
         components=components,
     )

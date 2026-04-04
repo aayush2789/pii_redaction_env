@@ -1,5 +1,8 @@
 from typing import Dict, List, Optional, Tuple
 
+from openenv.core.env_server.interfaces import Environment
+from openenv.core.env_server.types import State
+
 from .graders import compute_grade
 from .models import (
     ActionType,
@@ -12,8 +15,10 @@ from .models import (
 from .tasks import TASKS, get_task, load_documents
 
 
-class RedactionEnvironment:
+class RedactionEnvironment(Environment):
     def __init__(self, task_id: Optional[str] = None, window_size: int = 500, max_steps: int = 100):
+        super().__init__()
+        self._state = State(episode_id=None, step_count=0)
         self.window_size = window_size
         self.current_task = None
         self.current_doc = None
@@ -35,6 +40,7 @@ class RedactionEnvironment:
             self.current_task = {"task_id": task_id, **task}
             if not self._custom_max_steps:
                 self.max_steps = task.get("max_steps", max_steps)
+            self._state = State(episode_id=task_id, step_count=0)
 
     def reset(self, task_id: Optional[str] = None) -> RedactionObservation:
         if task_id is not None:
@@ -42,12 +48,14 @@ class RedactionEnvironment:
             self.current_task = {"task_id": task_id, **task}
             if not self._custom_max_steps:
                 self.max_steps = task.get("max_steps", self.max_steps)
+            self._state = State(episode_id=task_id, step_count=0)
         elif self.current_task is None:
             default_task_id = next(iter(TASKS.keys()))
             task = get_task(default_task_id)
             self.current_task = {"task_id": default_task_id, **task}
             if not self._custom_max_steps:
                 self.max_steps = task.get("max_steps", self.max_steps)
+            self._state = State(episode_id=default_task_id, step_count=0)
 
         docs = load_documents(self.current_task["task_id"])
         self.current_doc = docs[0]
@@ -61,6 +69,7 @@ class RedactionEnvironment:
         self.done = False
         self.previous_actions = []
         self.total_redacted_chars = 0
+        self._state.step_count = 0
 
         return self._build_observation()
 
@@ -68,10 +77,11 @@ class RedactionEnvironment:
         if self.current_doc is None:
             raise RuntimeError("Environment not initialized. Call reset() first.")
 
-        old_state = self.state()
+        old_state = self.state
         invalid_action = False
 
         self.step_count += 1
+        self._state.step_count = self.step_count
 
         if action.action_type == ActionType.NEXT_CHUNK:
             step_size = max(1, self.window_size // 2)
@@ -119,16 +129,9 @@ class RedactionEnvironment:
         }
         return observation, reward, self.done, info
 
-    def state(self) -> dict:
-        return {
-            "task_id": self.current_task["task_id"] if self.current_task else None,
-            "document_id": self.current_doc["id"] if self.current_doc else None,
-            "cursor": self.cursor,
-            "step_count": self.step_count,
-            "done": self.done,
-            "redacted_spans": list(self.redacted_spans),
-            "total_redacted_chars": self.total_redacted_chars,
-        }
+    @property
+    def state(self) -> State:
+        return self._state
 
     def grade(self) -> TaskGrade:
         if self.current_doc is None or self.current_task is None:

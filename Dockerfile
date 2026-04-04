@@ -15,4 +15,4 @@ RUN python -m pytest tests/ -v || echo "Tests skipped"
 
 EXPOSE 7860
 
-CMD ["python", "scripts/baseline.py"]
+CMD ["python", "-m", "server.app"]
