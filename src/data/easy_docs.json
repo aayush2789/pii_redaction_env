@@ -1,20 +1,122 @@
 [
   {
     "id": "easy_doc_001",
-    "text": "Contact john.doe@email.com or call 555-0123 at 77 Market Street.",
+    "text": "Master Services Agreement. Vendor support contact is john.doe@email.com. For urgent incidents call 555-0123 and mail signed notices to 77 Market Street, Floor 2, Redwood City. Project code references may appear in tickets but must remain visible for audit traceability.",
     "entities": [
-      {"label": "EMAIL", "start": 8, "end": 26, "text": "john.doe@email.com"},
-      {"label": "PHONE", "start": 34, "end": 42, "text": "555-0123"},
-      {"label": "ADDRESS", "start": 46, "end": 62, "text": "77 Market Street"}
+      {
+        "label": "EMAIL",
+        "start": 53,
+        "end": 71,
+        "text": "john.doe@email.com"
+      },
+      {
+        "label": "PHONE",
+        "start": 99,
+        "end": 107,
+        "text": "555-0123"
+      },
+      {
+        "label": "ADDRESS",
+        "start": 135,
+        "end": 151,
+        "text": "77 Market Street"
+      }
     ]
   },
   {
     "id": "easy_doc_002",
-    "text": "Employee Jane Roe lives at 12 Pine Ave. Email: jane.roe@corp.com",
+    "text": "Employment onboarding checklist for contractor Jane Roe. Primary residence listed as 12 Pine Avenue. Benefits enrollment questions can be sent to jane.roe@corp.com. Keep role title, department, and payroll cycle details unredacted for operations reconciliation.",
     "entities": [
-      {"label": "NAME", "start": 9, "end": 17, "text": "Jane Roe"},
-      {"label": "ADDRESS", "start": 27, "end": 38, "text": "12 Pine Ave"},
-      {"label": "EMAIL", "start": 47, "end": 64, "text": "jane.roe@corp.com"}
+      {
+        "label": "NAME",
+        "start": 47,
+        "end": 55,
+        "text": "Jane Roe"
+      },
+      {
+        "label": "ADDRESS",
+        "start": 85,
+        "end": 99,
+        "text": "12 Pine Avenue"
+      },
+      {
+        "label": "EMAIL",
+        "start": 146,
+        "end": 163,
+        "text": "jane.roe@corp.com"
+      }
+    ]
+  },
+  {
+    "id": "easy_doc_003",
+    "text": "Renewal amendment executed with customer success manager Michael Trent. Contact number on file: 415-555-0192. Invoice remittance address remains 204 Harbor Lane, Suite 8. Internal SLA terms and product SKUs are not personal data and should be preserved.",
+    "entities": [
+      {
+        "label": "NAME",
+        "start": 57,
+        "end": 70,
+        "text": "Michael Trent"
+      },
+      {
+        "label": "PHONE",
+        "start": 96,
+        "end": 108,
+        "text": "415-555-0192"
+      },
+      {
+        "label": "ADDRESS",
+        "start": 145,
+        "end": 160,
+        "text": "204 Harbor Lane"
+      }
+    ]
+  },
+  {
+    "id": "easy_doc_004",
+    "text": "Client transition memo: account owner Laura Kim confirmed new support alias laura.kim@vendor.io. Backup callback line is 650-555-2233. Meeting cadence and contract value should remain visible for reporting.",
+    "entities": [
+      {
+        "label": "NAME",
+        "start": 38,
+        "end": 47,
+        "text": "Laura Kim"
+      },
+      {
+        "label": "EMAIL",
+        "start": 76,
+        "end": 95,
+        "text": "laura.kim@vendor.io"
+      },
+      {
+        "label": "PHONE",
+        "start": 121,
+        "end": 133,
+        "text": "650-555-2233"
+      }
+    ]
+  },
+  {
+    "id": "easy_doc_005",
+    "text": "Facilities notice submitted by Peter Watts. Building access card will be mailed to 99 Elm Drive and confirmation sent via peter.watts@office.net. Badge ID and floor assignment are operational metadata and must remain intact.",
+    "entities": [
+      {
+        "label": "NAME",
+        "start": 31,
+        "end": 42,
+        "text": "Peter Watts"
+      },
+      {
+        "label": "ADDRESS",
+        "start": 83,
+        "end": 95,
+        "text": "99 Elm Drive"
+      },
+      {
+        "label": "EMAIL",
+        "start": 122,
+        "end": 144,
+        "text": "peter.watts@office.net"
+      }
     ]
   }
 ]

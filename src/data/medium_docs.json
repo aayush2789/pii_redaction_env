@@ -1,20 +1,128 @@
 [
   {
     "id": "medium_doc_001",
-    "text": "Patient Mary Johnson (DOB: 1985-04-12) was admitted on 2024-09-02. Contact: 212-555-9087.",
+    "text": "Discharge summary: Patient Mary Johnson presented with chest discomfort after activity. Recorded DOB 1985-04-12. Outpatient follow-up was coordinated using phone 212-555-9087.  Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers.",
     "entities": [
-      {"label": "NAME", "start": 8, "end": 20, "text": "Mary Johnson"},
-      {"label": "DOB", "start": 27, "end": 37, "text": "1985-04-12"},
-      {"label": "PHONE", "start": 76, "end": 88, "text": "212-555-9087"}
+      {
+        "label": "NAME",
+        "start": 27,
+        "end": 39,
+        "text": "Mary Johnson"
+      },
+      {
+        "label": "DOB",
+        "start": 101,
+        "end": 111,
+        "text": "1985-04-12"
+      },
+      {
+        "label": "PHONE",
+        "start": 162,
+        "end": 174,
+        "text": "212-555-9087"
+      }
     ]
   },
   {
     "id": "medium_doc_002",
-    "text": "Discharge summary for Robert King, DOB 1979-11-03. Home address 45 Cedar Road.",
+    "text": "Emergency department transfer record for Robert King. The chart lists DOB 1979-11-03 and residential location 45 Cedar Road.  Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers.",
     "entities": [
-      {"label": "NAME", "start": 22, "end": 33, "text": "Robert King"},
-      {"label": "DOB", "start": 39, "end": 49, "text": "1979-11-03"},
-      {"label": "ADDRESS", "start": 64, "end": 77, "text": "45 Cedar Road"}
+      {
+        "label": "NAME",
+        "start": 41,
+        "end": 52,
+        "text": "Robert King"
+      },
+      {
+        "label": "DOB",
+        "start": 74,
+        "end": 84,
+        "text": "1979-11-03"
+      },
+      {
+        "label": "ADDRESS",
+        "start": 110,
+        "end": 123,
+        "text": "45 Cedar Road"
+      }
+    ]
+  },
+  {
+    "id": "medium_doc_003",
+    "text": "Outpatient oncology follow-up for Denise Alvarez. Staff confirmed date of birth as 1968-09-21 and callback number 718-555-4410.  Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers.",
+    "entities": [
+      {
+        "label": "NAME",
+        "start": 34,
+        "end": 48,
+        "text": "Denise Alvarez"
+      },
+      {
+        "label": "DOB",
+        "start": 83,
+        "end": 93,
+        "text": "1968-09-21"
+      },
+      {
+        "label": "PHONE",
+        "start": 114,
+        "end": 126,
+        "text": "718-555-4410"
+      }
+    ]
+  },
+  {
+    "id": "medium_doc_004",
+    "text": "Rehabilitation intake note indicates patient Samuel Brooks resides at 330 Walnut Terrace and supplied alternate contact samuel.brooks@mail.org.  Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers.",
+    "entities": [
+      {
+        "label": "NAME",
+        "start": 45,
+        "end": 58,
+        "text": "Samuel Brooks"
+      },
+      {
+        "label": "ADDRESS",
+        "start": 70,
+        "end": 88,
+        "text": "330 Walnut Terrace"
+      },
+      {
+        "label": "EMAIL",
+        "start": 120,
+        "end": 142,
+        "text": "samuel.brooks@mail.org"
+      }
+    ]
+  },
+  {
+    "id": "medium_doc_005",
+    "text": "Neurology consult addendum for Priya Natarajan. Documentation includes DOB 1991-02-17, home line 646-555-7734, and correspondence email priya.n@healthmail.com.  Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers.",
+    "entities": [
+      {
+        "label": "NAME",
+        "start": 31,
+        "end": 46,
+        "text": "Priya Natarajan"
+      },
+      {
+        "label": "DOB",
+        "start": 75,
+        "end": 85,
+        "text": "1991-02-17"
+      },
+      {
+        "label": "PHONE",
+        "start": 97,
+        "end": 109,
+        "text": "646-555-7734"
+      },
+      {
+        "label": "EMAIL",
+        "start": 136,
+        "end": 158,
+        "text": "priya.n@healthmail.com"
+      }
     ]
   }
 ]

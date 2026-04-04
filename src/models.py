@@ -8,6 +8,7 @@ class ActionType(str, Enum):
     REDACT = "REDACT"
     SKIP = "SKIP"
     NEXT_CHUNK = "NEXT_CHUNK"
+    PREV_CHUNK = "PREV_CHUNK"
     FINISH = "FINISH"
 
 
@@ -31,6 +32,7 @@ class RedactionAction(BaseModel):
     start: Optional[int] = None
     end: Optional[int] = None
     confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+    justification: Optional[str] = None
 
     @model_validator(mode="after")
     def require_span_for_redact(self):

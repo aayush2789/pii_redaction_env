@@ -37,6 +37,18 @@ def test_next_chunk_advances_cursor():
     assert env.cursor > old_cursor
 
 
+def test_prev_chunk_rewinds_cursor():
+    env = RedactionEnvironment(task_id="gdpr_contract_easy", window_size=40)
+    env.reset()
+    env.step(RedactionAction(action_type=ActionType.NEXT_CHUNK))
+    moved_cursor = env.cursor
+
+    env.step(RedactionAction(action_type=ActionType.PREV_CHUNK))
+
+    assert env.cursor < moved_cursor
+    assert env.cursor >= 0
+
+
 def test_invalid_action_penalty():
     env = RedactionEnvironment(task_id="gdpr_contract_easy")
     env.reset()
@@ -83,3 +95,43 @@ def test_episode_terminates_on_max_steps():
     _, _, done, _ = env.step(RedactionAction(action_type=ActionType.SKIP))
 
     assert done is True
+
+
+def test_masked_window_shows_multiple_redactions():
+    env = RedactionEnvironment(task_id="gdpr_contract_easy", window_size=500)
+    obs = env.reset(seed=1)
+    email = next(entity for entity in env.ground_truth if entity.label == "EMAIL")
+    another = next(entity for entity in env.ground_truth if entity.label != "EMAIL")
+
+    env.step(RedactionAction(action_type=ActionType.REDACT, start=email.start, end=email.end))
+    obs, _, _, _ = env.step(
+        RedactionAction(action_type=ActionType.REDACT, start=another.start, end=another.end)
+    )
+
+    assert obs.visible_text.count("[REDACTED]") >= 2
+
+
+def test_reset_seed_is_reproducible():
+    env = RedactionEnvironment(task_id="gdpr_contract_easy")
+    obs_a = env.reset(seed=123)
+    obs_b = env.reset(seed=123)
+
+    assert obs_a.document_id == obs_b.document_id
+
+
+def test_explainability_bonus_applies_for_matching_justification():
+    env = RedactionEnvironment(task_id="gdpr_contract_easy")
+    env.reset(seed=1)
+    email = next(entity for entity in env.ground_truth if entity.label == "EMAIL")
+
+    _, reward, _, _ = env.step(
+        RedactionAction(
+            action_type=ActionType.REDACT,
+            start=email.start,
+            end=email.end,
+            confidence=0.9,
+            justification="This is clearly an email contact field",
+        )
+    )
+
+    assert reward.components["explainability_bonus"] == 0.1

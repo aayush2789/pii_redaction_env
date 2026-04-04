@@ -1,24 +1,106 @@
 #!/usr/bin/env python3
-"""Reproducible baseline inference runner for pii-redaction-env."""
+"""Competition inference script with strict structured logs."""
 
 from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict
+import re
+from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
 from src.environment import RedactionEnvironment
 from src.models import ActionType, RedactionAction
-from src.tasks import TASKS
+from dotenv import load_dotenv
+load_dotenv()
 
-ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://integrate.api.nvidia.com/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "meta/llama-3.1-70b-instruct")
-BENCHMARK = os.getenv("BENCHMARK", "emvlight")
-DEFAULT_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.0"))
-DEFAULT_SEED = int(os.getenv("OPENAI_SEED", "42"))
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY")
+BENCHMARK = os.getenv("BENCHMARK") or "pii-redaction-env"
+
+TEMPERATURE = float(os.getenv("TEMPERATURE", "0.0"))
+OPENAI_SEED = int(os.getenv("OPENAI_SEED", "42"))
+INFERENCE_MAX_STEPS = int(os.getenv("INFERENCE_MAX_STEPS", "30"))
+REQUEST_TIMEOUT_S = float(os.getenv("REQUEST_TIMEOUT_S", "45"))
+
+TASKS = ["gdpr_contract_easy", "hipaa_medical_medium", "security_logs_hard"]
+
+AUTH_BLOCK_REASON: Optional[str] = None
+BACKEND_BLOCK_REASON: Optional[str] = None
+
+
+def _is_gemma4_nvidia_model() -> bool:
+    return MODEL_NAME.strip().lower() == "google/gemma-4-31b-it"
+
+
+def _chat_completion_kwargs(prompt: str, use_json_mode: bool) -> Dict[str, Any]:
+    kwargs: Dict[str, Any] = {
+        "model": MODEL_NAME,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": TEMPERATURE,
+        "seed": OPENAI_SEED,
+        "timeout": REQUEST_TIMEOUT_S,
+    }
+
+    if _is_gemma4_nvidia_model():
+        kwargs["max_tokens"] = int(os.getenv("MAX_TOKENS", "150"))
+        kwargs["top_p"] = float(os.getenv("TOP_P", "0.95"))
+        kwargs["temperature"] = float(os.getenv("TEMPERATURE", "0"))
+        enable_thinking = os.getenv("ENABLE_THINKING", "0") in {"1", "true", "True"}
+        kwargs["extra_body"] = {
+            "chat_template_kwargs": {
+                "enable_thinking": enable_thinking,
+            }
+        }
+    elif use_json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+
+    return kwargs
+
+
+def _sanitize_api_key(value: Optional[str]) -> str:
+    token = (value or "").strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    return token
+
+
+def _is_auth_error(message: str) -> bool:
+    low = message.lower()
+    return "401" in low or "unauthorized" in low or "authentication failed" in low
+
+
+def _is_server_error(message: str) -> bool:
+    low = message.lower()
+    return "500" in low or "internal server error" in low or "enginecore" in low
+
+
+def _is_degraded_error(message: str) -> bool:
+    low = message.lower()
+    return "degraded" in low and "cannot be invoked" in low
+
+
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    done_val = str(done).lower()
+    error_val = error if error else "null"
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        flush=True,
+    )
+
+
+def log_end(success: bool, steps: int, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(
+        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
+        flush=True,
+    )
 
 
 def _build_prompt(obs) -> str:
@@ -47,80 +129,197 @@ Rules:
 """.strip()
 
 
-def _coerce_action(payload: Dict[str, Any]) -> RedactionAction:
+def _action_to_string(action: RedactionAction) -> str:
+    if action.action_type == ActionType.REDACT:
+        return f"REDACT({action.start},{action.end})"
+    return action.action_type.value
+
+
+def _coerce_action(payload: Dict[str, Any]) -> Tuple[RedactionAction, Optional[str]]:
     if "action_type" not in payload and "action" in payload:
         payload = {**payload, "action_type": payload["action"]}
     if "action_type" not in payload:
-        return RedactionAction(action_type=ActionType.NEXT_CHUNK)
+        return RedactionAction(action_type=ActionType.NEXT_CHUNK), "missing_action_type"
 
     try:
-        return RedactionAction(**payload)
-    except Exception:
-        return RedactionAction(action_type=ActionType.NEXT_CHUNK)
+        return RedactionAction(**payload), None
+    except Exception as exc:
+        return RedactionAction(action_type=ActionType.NEXT_CHUNK), str(exc)
 
 
-def run_baseline(task_id: str, model: str = MODEL_NAME) -> Dict[str, Any]:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is required to run inference baseline.")
+def _extract_json_object(text: str) -> Optional[str]:
+    candidate = (text or "").strip()
+    if not candidate:
+        return None
 
-    client = OpenAI(base_url=API_BASE_URL, api_key=api_key)
+    # Handle fenced markdown blocks.
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\s*```$", "", candidate, flags=re.IGNORECASE)
+        candidate = candidate.strip()
+
+    # Fast path if already a JSON object.
+    if candidate.startswith("{") and candidate.endswith("}"):
+        return candidate
+
+    # Extract first balanced {...} block from verbose output.
+    start = candidate.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    for idx in range(start, len(candidate)):
+        ch = candidate[idx]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return candidate[start : idx + 1]
+    return None
+
+
+def _parse_action_payload(raw_text: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    json_text = _extract_json_object(raw_text)
+    if not json_text:
+        return None, "no_json_object"
+    try:
+        payload = json.loads(json_text)
+        if not isinstance(payload, dict):
+            return None, "json_not_object"
+        return payload, None
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _first_match(pattern: str, text: str) -> Optional[Tuple[int, int]]:
+    m = re.search(pattern, text, flags=re.IGNORECASE)
+    if not m:
+        return None
+    return m.start(), m.end()
+
+
+def _fallback_action(obs) -> RedactionAction:
+    # Deterministic local policy used when provider auth/config is invalid.
+    patterns = [
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+        r"\b\d{3}[-.]\d{4}\b",
+        r"\b\d{3}[-.]\d{3}[-.]\d{4}\b",
+        r"\b\d{4}-\d{2}-\d{2}\b",
+    ]
+
+    for pattern in patterns:
+        rel_span = _first_match(pattern, obs.visible_text)
+        if rel_span is not None:
+            start = obs.cursor_position + rel_span[0]
+            end = obs.cursor_position + rel_span[1]
+            return RedactionAction(action_type=ActionType.REDACT, start=start, end=end)
+
+    if obs.progress_pct >= 0.98:
+        return RedactionAction(action_type=ActionType.FINISH)
+    return RedactionAction(action_type=ActionType.NEXT_CHUNK)
+
+
+def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
+    global AUTH_BLOCK_REASON, BACKEND_BLOCK_REASON
+
+    if AUTH_BLOCK_REASON is not None:
+        return _fallback_action(obs), AUTH_BLOCK_REASON
+    if BACKEND_BLOCK_REASON is not None:
+        return _fallback_action(obs), BACKEND_BLOCK_REASON
+
+    prompt = _build_prompt(obs)
+
+    # First attempt with strict JSON mode.
+    try:
+        response = client.chat.completions.create(**_chat_completion_kwargs(prompt, use_json_mode=True))
+        text = response.choices[0].message.content or ""
+        payload, parse_error = _parse_action_payload(text)
+        if payload is None:
+            return _fallback_action(obs), parse_error
+        return _coerce_action(payload)
+    except Exception as exc:
+        msg = str(exc)
+        if _is_auth_error(msg):
+            AUTH_BLOCK_REASON = "authentication_failed"
+            return _fallback_action(obs), AUTH_BLOCK_REASON
+        if _is_degraded_error(msg):
+            BACKEND_BLOCK_REASON = "backend_degraded"
+            return _fallback_action(obs), BACKEND_BLOCK_REASON
+        if _is_server_error(msg):
+            # Retry once without response_format for providers that fail on JSON mode.
+            try:
+                response = client.chat.completions.create(**_chat_completion_kwargs(prompt, use_json_mode=False))
+                text = response.choices[0].message.content or ""
+                payload, parse_error = _parse_action_payload(text)
+                if payload is None:
+                    return _fallback_action(obs), parse_error
+                return _coerce_action(payload)
+            except Exception as retry_exc:
+                retry_msg = str(retry_exc)
+                if _is_auth_error(retry_msg):
+                    AUTH_BLOCK_REASON = "authentication_failed"
+                    return _fallback_action(obs), AUTH_BLOCK_REASON
+                if _is_degraded_error(retry_msg):
+                    BACKEND_BLOCK_REASON = "backend_degraded"
+                    return _fallback_action(obs), BACKEND_BLOCK_REASON
+                if _is_server_error(retry_msg):
+                    BACKEND_BLOCK_REASON = "backend_500"
+                    return _fallback_action(obs), BACKEND_BLOCK_REASON
+                return _fallback_action(obs), retry_msg
+        return _fallback_action(obs), msg
+
+
+def run_task(client: OpenAI, task_id: str) -> None:
     env = RedactionEnvironment(task_id=task_id)
+    rewards: List[float] = []
+    steps = 0
+    success = False
 
-    obs = env.reset()
-    rewards = []
+    log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
 
-    while not obs.done:
-        prompt = _build_prompt(obs)
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-                temperature=DEFAULT_TEMPERATURE,
-                seed=DEFAULT_SEED,
-            )
-            text = response.choices[0].message.content or "{}"
-            action_payload = json.loads(text)
-            action = _coerce_action(action_payload)
-        except Exception:
-            action = RedactionAction(action_type=ActionType.NEXT_CHUNK)
+    try:
+        obs = env.reset()
+        for step in range(1, INFERENCE_MAX_STEPS + 1):
+            if obs.done:
+                break
 
-        obs, reward, done, _ = env.step(action)
-        rewards.append(reward.total)
+            action, action_error = _next_action(client, obs)
+            action_str = _action_to_string(action)
 
-        if done:
-            break
+            obs, reward, done, info = env.step(action)
+            steps = step
+            rewards.append(reward.total)
 
-    grade = env.grade()
-    result = {
-        "task_id": task_id,
-        "score": grade.score,
-        "f1": grade.f1_final,
-        "precision": grade.precision,
-        "recall": grade.recall,
-        "utility": grade.utility_score,
-        "success": grade.success,
-        "success_threshold": TASKS[task_id]["success_threshold"],
-        "total_reward": round(sum(rewards), 4),
-        "steps": len(rewards),
-    }
-    return result
+            error_value: Optional[str] = action_error
+            if info.get("invalid_action"):
+                error_value = "invalid_action"
+
+            log_step(step=step, action=action_str, reward=reward.total, done=done, error=error_value)
+
+            if done:
+                break
+
+        grade = env.grade()
+        success = bool(grade.success)
+    except Exception:
+        success = False
+    finally:
+        log_end(success=success, steps=steps, rewards=rewards)
 
 
 def main() -> None:
-    task_ids = ["gdpr_contract_easy", "hipaa_medical_medium", "security_logs_hard"]
-    all_results = [run_baseline(task_id=t) for t in task_ids]
+    global AUTH_BLOCK_REASON, BACKEND_BLOCK_REASON
 
-    print("=== Baseline Results ===")
-    for row in all_results:
-        print(
-            f"{row['task_id']}: score={row['score']:.3f} "
-            f"f1={row['f1']:.3f} precision={row['precision']:.3f} "
-            f"recall={row['recall']:.3f} utility={row['utility']:.3f} "
-            f"success={row['success']} threshold={row['success_threshold']:.2f} "
-            f"steps={row['steps']} total_reward={row['total_reward']:.2f}"
-        )
+    resolved_token = _sanitize_api_key(HF_TOKEN)
+    if not resolved_token:
+        raise RuntimeError("HF_TOKEN (or OPENAI_API_KEY) is required.")
+
+    AUTH_BLOCK_REASON = None
+    BACKEND_BLOCK_REASON = None
+    client = OpenAI(base_url=API_BASE_URL, api_key=resolved_token)
+    for task_id in TASKS:
+        run_task(client, task_id)
 
 
 if __name__ == "__main__":

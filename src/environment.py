@@ -1,3 +1,4 @@
+import random
 from typing import Dict, List, Optional, Tuple
 
 from openenv.core.env_server.interfaces import Environment
@@ -34,6 +35,7 @@ class RedactionEnvironment(Environment):
         self.previous_actions: List[str] = []
         self.total_redacted_chars = 0
         self.detected_spans: List[Tuple[int, int]] = []
+        self._seed = 0
 
         if task_id is not None:
             task = get_task(task_id)
@@ -42,7 +44,7 @@ class RedactionEnvironment(Environment):
                 self.max_steps = task.get("max_steps", max_steps)
             self._state = State(episode_id=task_id, step_count=0)
 
-    def reset(self, task_id: Optional[str] = None) -> RedactionObservation:
+    def reset(self, task_id: Optional[str] = None, seed: Optional[int] = None) -> RedactionObservation:
         if task_id is not None:
             task = get_task(task_id)
             self.current_task = {"task_id": task_id, **task}
@@ -58,7 +60,10 @@ class RedactionEnvironment(Environment):
             self._state = State(episode_id=default_task_id, step_count=0)
 
         docs = load_documents(self.current_task["task_id"])
-        self.current_doc = docs[0]
+        effective_seed = seed if seed is not None else self._seed
+        self.current_doc = random.Random(effective_seed).choice(docs)
+        if seed is None:
+            self._seed += 1
         self.ground_truth = [PIIEntity(**entity) for entity in self.current_doc.get("entities", [])]
 
         self.cursor = 0
@@ -87,6 +92,10 @@ class RedactionEnvironment(Environment):
             step_size = max(1, self.window_size // 2)
             max_cursor = max(0, len(self.current_doc["text"]) - 1)
             self.cursor = min(max_cursor, self.cursor + step_size)
+
+        elif action.action_type == ActionType.PREV_CHUNK:
+            step_size = max(1, self.window_size // 2)
+            self.cursor = max(0, self.cursor - step_size)
 
         elif action.action_type == ActionType.REDACT:
             start = action.start if action.start is not None else -1
@@ -146,17 +155,21 @@ class RedactionEnvironment(Environment):
             success_threshold=self.current_task["success_threshold"],
         )
 
-    def compute_reward(self, action: RedactionAction, old_state: dict) -> RedactionReward:
+    def compute_reward(self, action: RedactionAction, old_state: State) -> RedactionReward:
         del old_state
         components: Dict[str, float] = {}
 
         if action.action_type == ActionType.NEXT_CHUNK:
             components["progress_bonus"] = 0.1
+        elif action.action_type == ActionType.PREV_CHUNK:
+            components["progress_bonus"] = -0.05
         else:
             components["progress_bonus"] = 0.0
 
         tp_bonus = 0.0
         fp_penalty = 0.0
+        calibration_penalty = 0.0
+        explainability_bonus = 0.0
 
         if action.action_type == ActionType.REDACT and action.start is not None and action.end is not None:
             span = (action.start, action.end)
@@ -167,14 +180,32 @@ class RedactionEnvironment(Environment):
             )
 
             if best_iou > 0.6:
-                tp_bonus = 1.0 * best_iou
+                tp_bonus = 0.5 + 0.5 * best_iou
                 if any(self._iou(span, existing) > 0.8 for existing in self.redacted_spans[:-1]):
                     tp_bonus = 0.1
             else:
-                fp_penalty = -0.5
+                fp_penalty = -0.5 * (1 - best_iou)
+
+            calibration_penalty = -0.2 * abs(action.confidence - best_iou)
+
+            if action.justification:
+                label = self._best_label(action.start, action.end)
+                keyword_map = {
+                    "EMAIL": ["email", "contact", "mail"],
+                    "PHONE": ["phone", "number", "call", "mobile"],
+                    "NAME": ["name", "person", "patient"],
+                    "ADDRESS": ["address", "street", "location", "residence"],
+                    "DOB": ["dob", "birth", "date of birth"],
+                    "SSN": ["ssn", "social security"],
+                }
+                text = action.justification.lower()
+                if any(k in text for k in keyword_map.get(label, [])):
+                    explainability_bonus = 0.1
 
         components["tp_bonus"] = round(tp_bonus, 4)
         components["fp_penalty"] = round(fp_penalty, 4)
+        components["calibration_penalty"] = round(calibration_penalty, 4)
+        components["explainability_bonus"] = round(explainability_bonus, 4)
 
         fn_penalty = 0.0
         utility_penalty = 0.0
@@ -237,18 +268,22 @@ class RedactionEnvironment(Environment):
         parts: List[str] = []
         i = start
         while i < end:
-            matching = [span for span in self.redacted_spans if span[0] < end and span[1] > i]
-            if not matching:
-                parts.append(text[i:end])
-                break
+            covering = [
+                span for span in self.redacted_spans
+                if span[0] <= i < span[1] and span[0] < end and span[1] > start
+            ]
 
-            next_span = min(matching, key=lambda s: s[0])
-            s0, s1 = max(start, next_span[0]), min(end, next_span[1])
+            if covering:
+                cover_end = min(end, max(span[1] for span in covering))
+                parts.append("[REDACTED]")
+                i = cover_end
+                continue
 
-            if i < s0:
-                parts.append(text[i:s0])
-            parts.append("[REDACTED]")
-            i = s1
+            next_starts = [span[0] for span in self.redacted_spans if i < span[0] < end]
+            next_boundary = min(next_starts) if next_starts else end
+            if next_boundary > i:
+                parts.append(text[i:next_boundary])
+            i = next_boundary
 
         return "".join(parts)
 
@@ -319,4 +354,6 @@ class RedactionEnvironment(Environment):
     def _action_to_string(action: RedactionAction) -> str:
         if action.action_type == ActionType.REDACT:
             return f"REDACT({action.start},{action.end})"
+        if action.action_type == ActionType.PREV_CHUNK:
+            return "PREV_CHUNK"
         return action.action_type.value
