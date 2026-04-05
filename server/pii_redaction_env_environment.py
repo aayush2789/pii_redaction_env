@@ -51,6 +51,12 @@ class RedactionEnvironment(Environment):
         self.total_redacted_chars = 0
         self.detected_spans: List[Tuple[int, int]] = []
         self._recent_redact_spans: deque = deque(maxlen=10)
+        self._cached_tp = 0
+        self._cached_fp = 0
+        self._cached_fn = 0
+        self._cached_label_correct = 0
+        self._cached_label_total = 0
+        self._matched_gt_indices: set[int] = set()
         self._seed = 0
 
         if task_id is not None:
@@ -91,6 +97,12 @@ class RedactionEnvironment(Environment):
         self.previous_actions = []
         self.total_redacted_chars = 0
         self._recent_redact_spans = deque(maxlen=10)
+        self._cached_tp = 0
+        self._cached_fp = 0
+        self._cached_fn = len(self.ground_truth)
+        self._cached_label_correct = 0
+        self._cached_label_total = 0
+        self._matched_gt_indices = set()
         self._state.step_count = 0
 
         return self._build_observation()
@@ -99,7 +111,7 @@ class RedactionEnvironment(Environment):
         if self.current_doc is None:
             raise RuntimeError("Environment not initialized. Call reset() first.")
 
-        old_state = self.state
+        old_potential = self._calculate_potential()
         invalid_action = False
 
         self.step_count += 1
@@ -132,9 +144,9 @@ class RedactionEnvironment(Environment):
                     self.total_redacted_chars = self._merged_span_length(self.redacted_spans)
 
                     entity_text = self.current_doc["text"][start:end]
-                    self.detected_entities.append(
-                        PIIEntity(label=action.label, start=start, end=end, text=entity_text)
-                    )
+                    detected = PIIEntity(label=action.label, start=start, end=end, text=entity_text)
+                    self.detected_entities.append(detected)
+                    self._update_cached_metrics_for_detection(detected)
 
         elif action.action_type == ActionType.FINISH:
             self.done = True
@@ -148,11 +160,7 @@ class RedactionEnvironment(Environment):
         if self.step_count >= self.max_steps:
             self.done = True
 
-        reward = self.compute_reward(action, old_state)
-        if invalid_action:
-            reward.components["invalid_action_penalty"] = -1.0
-            reward.raw_total = round(reward.raw_total - 1.0, 4)
-            reward.total = round(max(0.0, min(1.0, (reward.raw_total + 1.0) / 2.0)), 4)
+        reward = self.compute_reward(action, old_potential, invalid_action=invalid_action)
 
         observation = self._build_observation()
         info = {
@@ -161,6 +169,50 @@ class RedactionEnvironment(Environment):
             "task_id": self.current_task["task_id"],
         }
         return observation, reward, self.done, info
+
+    def _update_cached_metrics_for_detection(self, det: PIIEntity) -> None:
+        best_idx = None
+        best_iou = 0.0
+        for idx, gt in enumerate(self.ground_truth):
+            if idx in self._matched_gt_indices:
+                continue
+            score = _iou_fn((det.start, det.end), (gt.start, gt.end))
+            if score > 0.6 and score > best_iou:
+                best_iou = score
+                best_idx = idx
+
+        if best_idx is not None:
+            self._matched_gt_indices.add(best_idx)
+            self._cached_tp += 1
+            self._cached_fn = max(0, self._cached_fn - 1)
+            self._cached_label_total += 1
+            if det.label == self.ground_truth[best_idx].label:
+                self._cached_label_correct += 1
+        else:
+            self._cached_fp += 1
+
+    def _calculate_potential(self) -> float:
+        """
+        Calculate the Potential Function Phi(s) based on the current grading metric.
+        Phi(s) = 0.55 * F1 + 0.15 * LabelAccuracy + 0.30 * Utility
+        """
+        if self.current_doc is None:
+            return 0.0
+
+        precision = self._cached_tp / (self._cached_tp + self._cached_fp) if (self._cached_tp + self._cached_fp) else 0.0
+        recall = self._cached_tp / (self._cached_tp + self._cached_fn) if (self._cached_tp + self._cached_fn) else 0.0
+        f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+        label_accuracy = (self._cached_label_correct / self._cached_label_total) if self._cached_label_total else 0.0
+
+        doc_len = len(self.current_doc["text"])
+        over_redaction_ratio = (self.total_redacted_chars / doc_len) if doc_len else 0.0
+        if over_redaction_ratio > 0.25:
+            utility_score = max(0.0, 1 - 2 * (over_redaction_ratio - 0.25))
+        else:
+            utility_score = 1.0
+
+        utility_weight = 0.30
+        return (0.55 * f1) + (0.15 * label_accuracy) + (utility_weight * utility_score)
 
     @property
     def state(self) -> State:
@@ -179,25 +231,20 @@ class RedactionEnvironment(Environment):
             success_threshold=self.current_task["success_threshold"],
         )
 
-    def compute_reward(self, action: RedactionAction, old_state: State) -> RedactionReward:
-        del old_state
+    def compute_reward(self, action: RedactionAction, old_potential: float, invalid_action: bool = False) -> RedactionReward:
         components: Dict[str, float] = {}
 
-        # Fix 7: Progress-scaled positive reward for NEXT_CHUNK
-        if action.action_type == ActionType.NEXT_CHUNK:
-            progress = self._current_progress()
-            components["progress_bonus"] = round(0.05 * (1.0 - progress), 4)
-        elif action.action_type == ActionType.PREV_CHUNK:
-            at_or_near_start = self.cursor <= self.window_size // 2
-            components["progress_bonus"] = -0.05 if at_or_near_start else 0.0
-        else:
-            components["progress_bonus"] = 0.0
+        # 1. Shaping Reward (PBRS): Delta Phi
+        new_potential = self._calculate_potential()
+        gamma = 0.99
+        shaping_reward = (gamma * new_potential) - old_potential
+        components["shaping_potential"] = round(shaping_reward, 4)
 
+        # 2. Base Rewards (Direct penalties for undesirable behavior)
         tp_bonus = 0.0
         fp_penalty = 0.0
         duplicate_penalty = 0.0
-        calibration_penalty = 0.0
-        explainability_bonus = 0.0
+        invalid_penalty = -1.0 if invalid_action else 0.0
 
         is_span_action = (
             action.action_type == ActionType.REDACT
@@ -207,7 +254,7 @@ class RedactionEnvironment(Environment):
         if is_span_action:
             span = (action.start, action.end)
 
-            # Escalating duplicate-action penalty
+            # Duplicate action penalty
             dup_count = sum(
                 1 for prev in self._recent_redact_spans
                 if _iou_fn(span, prev) > 0.8
@@ -216,58 +263,34 @@ class RedactionEnvironment(Environment):
                 duplicate_penalty = -0.2 * dup_count
             self._recent_redact_spans.append(span)
 
+            # Direct FP penalty (for spans with near-zero IoU)
             best_iou = (
                 max(_iou_fn(span, (gt.start, gt.end)) for gt in self.ground_truth)
                 if self.ground_truth
                 else 0.0
             )
-
             if best_iou > 0.6:
-                tp_bonus = best_iou
+                tp_bonus = 0.1 * best_iou
+                fp_penalty = 0.0
             else:
-                fp_penalty = -0.3
-
-            calibration_penalty = -0.1 * abs(action.confidence - best_iou)
-
-            if action.justification:
-                label = self._best_label(action.start, action.end)
-                keyword_map = {
-                    "EMAIL": ["email", "contact", "mail"],
-                    "PHONE": ["phone", "number", "call", "mobile"],
-                    "NAME": ["name", "person", "patient"],
-                    "ADDRESS": ["address", "street", "location", "residence"],
-                    "DOB": ["dob", "birth", "date of birth"],
-                    "SSN": ["ssn", "social security"],
-                }
-                text = action.justification.lower()
-                if any(k in text for k in keyword_map.get(label, [])):
-                    explainability_bonus = 0.1
-
-        finish_bonus = 0.0
-        if action.action_type == ActionType.FINISH:
-            running_f1 = self._compute_running_f1()
-            finish_bonus = min(0.7, 0.7 * running_f1)
+                fp_penalty = -0.2 * (1 - best_iou)
 
         components["tp_bonus"] = round(tp_bonus, 4)
         components["fp_penalty"] = round(fp_penalty, 4)
         components["duplicate_penalty"] = round(duplicate_penalty, 4)
-        components["calibration_penalty"] = round(calibration_penalty, 4)
-        components["explainability_bonus"] = round(explainability_bonus, 4)
-        components["finish_bonus"] = round(finish_bonus, 4)
+        components["invalid_penalty"] = round(invalid_penalty, 4)
 
-        raw_total = round(sum(components.values()), 4)
-        # Fix 2: Linear clamping instead of sigmoid for better discriminability
-        total = round(max(0.0, min(1.0, (raw_total + 1.0) / 2.0)), 4)
+        raw_total = round(
+            shaping_reward
+            + tp_bonus
+            + fp_penalty
+            + duplicate_penalty
+            + invalid_penalty,
+            4,
+        )
+        total = raw_total
 
-        matched_gt = 0
-        for gt in self.ground_truth:
-            if any(
-                _iou_fn((gt.start, gt.end), (det.start, det.end)) > 0.6
-                for det in self.detected_entities
-            ):
-                matched_gt += 1
-
-        remaining_entities = max(0, len(self.ground_truth) - matched_gt)
+        remaining_entities = max(0, self._cached_fn)
 
         return RedactionReward(
             total=total,
@@ -367,32 +390,8 @@ class RedactionEnvironment(Environment):
         return sum(e - s for s, e in compact)
 
     def _compute_running_f1(self) -> float:
-        if not self.ground_truth:
-            return 0.0
-
-        matched_gt = set()
-        tp = 0
-        for det in self.detected_entities:
-            best_idx = None
-            best_iou = 0.0
-            for idx, gt in enumerate(self.ground_truth):
-                if idx in matched_gt:
-                    continue
-                # Fix 5: Relaxed matching — IoU-only, no label requirement
-                # Prevents double-penalizing near-misses with auto-assigned labels
-                score = _iou_fn((det.start, det.end), (gt.start, gt.end))
-                if score > 0.6 and score > best_iou:
-                    best_iou = score
-                    best_idx = idx
-            if best_idx is not None:
-                matched_gt.add(best_idx)
-                tp += 1
-
-        fp = max(0, len(self.detected_entities) - tp)
-        fn = max(0, len(self.ground_truth) - tp)
-
-        precision = tp / (tp + fp) if (tp + fp) else 0.0
-        recall = tp / (tp + fn) if (tp + fn) else 0.0
+        precision = self._cached_tp / (self._cached_tp + self._cached_fp) if (self._cached_tp + self._cached_fp) else 0.0
+        recall = self._cached_tp / (self._cached_tp + self._cached_fn) if (self._cached_tp + self._cached_fn) else 0.0
         if precision + recall == 0:
             return 0.0
         return round(2 * precision * recall / (precision + recall), 4)

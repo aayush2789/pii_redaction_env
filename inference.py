@@ -27,7 +27,7 @@ BENCHMARK = os.getenv("BENCHMARK") or "pii-redaction-env"
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.0"))
 OPENAI_SEED = int(os.getenv("OPENAI_SEED", "42"))
 INFERENCE_MAX_STEPS = int(os.getenv("INFERENCE_MAX_STEPS", "100"))
-REQUEST_TIMEOUT_S = float(os.getenv("REQUEST_TIMEOUT_S", "45"))
+REQUEST_TIMEOUT_S = float(os.getenv("REQUEST_TIMEOUT_S", "90"))
 
 TASKS = ["gdpr_contract_easy", "hipaa_medical_medium", "security_logs_hard"]
 
@@ -47,7 +47,9 @@ LABEL_PATTERNS: Dict[str, List[str]] = {
         r"\b\d{2}-\d{2}-\d{4}\b",
     ],
     "NAME": [],
-    "ADDRESS": [],
+    "ADDRESS": [
+        r"\d+\s+[A-Za-z]+(?:\s+[A-Za-z]+){1,4}(?:\s+(?:St|Ave|Blvd|Rd|Dr|Ln|Way|Ct|Terrace|Court|Place|Drive|Road|Street|Lane|Boulevard|Avenue)\.?)*(?:,\s*(?:Apt|Suite|Unit|Floor|Fl)\.?\s*[\w-]+)?",
+    ],
 }
 
 PII_REGEX_PATTERNS = [pattern for patterns in LABEL_PATTERNS.values() for pattern in patterns]
@@ -99,6 +101,11 @@ def _is_server_error(message: str) -> bool:
     return "500" in low or "internal server error" in low or "enginecore" in low
 
 
+def _is_timeout_error(message: str) -> bool:
+    low = message.lower()
+    return "timeout" in low or "timed out" in low or "read timeout" in low
+
+
 def _is_degraded_error(message: str) -> bool:
     low = message.lower()
     return "degraded" in low and "cannot be invoked" in low
@@ -139,12 +146,26 @@ Label guidance:
 - an email address -> EMAIL
 - a phone number -> PHONE
 - a social security number -> SSN
+- NAME detection: scan for full names near contextual anchors such as member,
+  patient, customer, contractor, tenant, applicant, owner, user, caller, she,
+  he, her, and his. Redact the NAME before associated contact details.
 
 IMPORTANT — Obfuscated PII patterns to watch for:
 - Emails: "john dot smith at gmail dot com", "j_doe at mail dot net"
 - Phones: "five five five-0199", "area code four-one-five then 555-0187"
 - SSNs: "three four five dash six seven dash eight nine zero one"
 - DOBs: "nineteen eighty-five march twelve", "oh-three slash fifteen slash seventy-eight"
+
+IMPORTANT — Span boundaries for obfuscated PII:
+When PII is written out in words, the span MUST start at the FIRST word of the
+obfuscated phrase and end at the LAST character of the value, including all
+written-out connectors. Do NOT start the span at the first digit.
+
+WRONG: "area code four-one-five, then 555-0187" -> start at "555"
+RIGHT: "area code four-one-five, then 555-0187" -> start at "area"
+
+WRONG: "john dot smith at gmail dot com" -> start at "smith"
+RIGHT: "john dot smith at gmail dot com" -> start at "john"
 
 DO NOT REDACT: Company names (Apple, Google, Amazon, Microsoft, Samsung, Meta),
 product codes, project codenames (Falcon, Orion), infrastructure terms, or
@@ -164,6 +185,12 @@ Worked example for absolute indexing:
 4. absolute_start = 50 + 8 = 58
 5. If "John" is the target span, its absolute indices are start=58 and end=62
 
+ADDRESS example:
+1. visible_text = "...resides at 90 Birchwood Lane. Patient..."
+2. cursor_position = 0
+3. The address starts at "90" and ends after "Lane".
+4. Count from the first digit of the street number and stop before punctuation.
+
 Return strict JSON only, one of:
 {{"action": "REDACT", "start": <abs_start>, "end": <abs_end>, "label": "<PII_TYPE>"}}
 {{"action": "NEXT_CHUNK"}}
@@ -178,7 +205,11 @@ Rules:
 - Use the label guidance above when choosing REDACT labels; wrong labels are penalized.
 - NEXT_CHUNK: advance to next unseen section. Use after all PII in current window is handled.
 - SKIP: no PII found in current window, equivalent to acknowledging and waiting.
-- FINISH: only when progress >= 95% AND no remaining PII to redact.
+- FINISH: only when ALL of the following are true:
+    1. progress_pct >= 1.0 (you have scrolled through the entire document), AND
+    2. remaining_entities == 0 in the last reward signal, AND
+    3. You have explicitly looked for every PII type: NAME, DOB, EMAIL, PHONE, SSN, ADDRESS.
+    Do NOT call FINISH just because no new PII is visible in the current window.
 - Do NOT re-redact spans that appear in already_redacted — move forward instead.
 - Prefer tight, precise spans over broad ones.
 - If uncertain whether something is PII, use NEXT_CHUNK for more context.
@@ -334,18 +365,20 @@ def _first_match(pattern: str, text: str) -> Optional[Tuple[int, int]]:
 
 def _fallback_action(obs) -> RedactionAction:
     # Deterministic local policy used when provider auth/config is invalid.
-    for pattern in PII_REGEX_PATTERNS:
-        rel_span = _first_match(pattern, obs.visible_text)
-        if rel_span is not None:
-            start = obs.cursor_position + rel_span[0]
-            end = obs.cursor_position + rel_span[1]
-            span_text = (obs.visible_text or "")[rel_span[0]:rel_span[1]]
-            return RedactionAction(
-                action_type=ActionType.REDACT,
-                start=start,
-                end=end,
-                label=_label_from_text(span_text),
-            )
+    for label, patterns in LABEL_PATTERNS.items():
+        if not patterns:
+            continue
+        for pattern in patterns:
+            rel_span = _first_match(pattern, obs.visible_text)
+            if rel_span is not None:
+                start = obs.cursor_position + rel_span[0]
+                end = obs.cursor_position + rel_span[1]
+                return RedactionAction(
+                    action_type=ActionType.REDACT,
+                    start=start,
+                    end=end,
+                    label=label,
+                )
 
     if obs.progress_pct >= 0.98:
         return RedactionAction(action_type=ActionType.FINISH)
@@ -409,6 +442,16 @@ def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
                     BACKEND_BLOCK_REASON = "backend_500"
                     return _fallback_action(obs), BACKEND_BLOCK_REASON
                 return _fallback_action(obs), retry_msg
+        if _is_timeout_error(msg):
+            # Retry once without JSON mode to reduce parse overhead.
+            try:
+                response = client.chat.completions.create(**_chat_completion_kwargs(prompt, use_json_mode=False))
+                text = response.choices[0].message.content or ""
+                payload, parse_error = _parse_action_payload(text)
+                if payload is not None:
+                    return _coerce_action(payload, obs)
+            except Exception:
+                pass
         return _fallback_action(obs), msg
 
 

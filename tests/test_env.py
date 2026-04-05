@@ -28,7 +28,7 @@ def test_redact_action_masks_text():
     )
 
     assert "[REDACTED]" in obs.visible_text or "[REDACT" in obs.visible_text
-    assert 0.0 <= reward.total <= 1.0
+    assert reward.total == reward.raw_total
     assert reward.raw_total > 0.0
     assert done is False
 
@@ -64,9 +64,8 @@ def test_invalid_action_penalty():
     )
 
     assert info["invalid_action"] is True
-    assert reward.components["invalid_action_penalty"] == -1.0
+    assert reward.components["invalid_penalty"] == -1.0
     assert reward.raw_total < 0.0
-    assert 0.0 <= reward.total <= 1.0
 
 
 def test_grade_computes_f1_correctly():
@@ -146,7 +145,7 @@ def test_reset_seed_is_reproducible():
     assert obs_a.document_id == obs_b.document_id
 
 
-def test_explainability_bonus_applies_for_matching_justification():
+def test_explainability_bonus_removed_from_base_reward():
     env = RedactionEnvironment(task_id="gdpr_contract_easy")
     env.reset(seed=0)
     entity = env.ground_truth[0]
@@ -173,10 +172,10 @@ def test_explainability_bonus_applies_for_matching_justification():
         )
     )
 
-    assert reward.components["explainability_bonus"] == 0.1
+    assert "explainability_bonus" not in reward.components
 
 
-def test_navigation_rewards_are_applied():
+def test_navigation_reward_is_pbrs_only():
     env = RedactionEnvironment(task_id="gdpr_contract_easy", window_size=30)
     env.reset(seed=2)
 
@@ -184,14 +183,11 @@ def test_navigation_rewards_are_applied():
     env.cursor = min(len(env.current_doc["text"]) - 1, env.window_size * 2)
     _, prev_reward, _, _ = env.step(RedactionAction(action_type=ActionType.PREV_CHUNK))
 
-    # Fix 7: NEXT_CHUNK now gives positive progress-scaled reward
-    assert next_reward.components["progress_bonus"] >= 0.0
-    assert prev_reward.components["progress_bonus"] == 0.0
-    assert 0.0 <= next_reward.total <= 1.0
-    assert 0.0 <= prev_reward.total <= 1.0
+    assert "progress_bonus" not in next_reward.components
+    assert "progress_bonus" not in prev_reward.components
 
 
-def test_finish_bonus_is_present_and_bounded():
+def test_finish_bonus_removed_from_base_reward():
     env = RedactionEnvironment(task_id="gdpr_contract_easy")
     env.reset(seed=0)
 
@@ -219,8 +215,7 @@ def test_finish_bonus_is_present_and_bounded():
     _, reward, done, _ = env.step(RedactionAction(action_type=ActionType.FINISH))
 
     assert done is True
-    assert 0.0 <= reward.total <= 1.0
-    assert 0.0 <= reward.components["finish_bonus"] <= 0.7
+    assert "finish_bonus" not in reward.components
 
 
 def test_duplicate_redaction_escalating_penalty():
@@ -322,13 +317,13 @@ def test_duplicate_redaction_is_invalid_and_not_duplicated():
     assert len(env.detected_entities) == 1
 
 
-def test_finish_bonus_is_zero_without_prior_redactions():
+def test_finish_bonus_component_absent_without_prior_redactions():
     env = RedactionEnvironment(task_id="gdpr_contract_easy")
     env.reset(seed=0)
 
     _, reward, _, _ = env.step(RedactionAction(action_type=ActionType.FINISH))
 
-    assert reward.components["finish_bonus"] == 0.0
+    assert "finish_bonus" not in reward.components
 
 
 def test_best_label_falls_back_to_regex_heuristic():
@@ -347,7 +342,7 @@ def test_best_label_falls_back_to_regex_heuristic():
     assert env._best_label(email.start, email.end) == "EMAIL"
 
 
-def test_prev_chunk_reward_depends_on_cursor_position():
+def test_prev_chunk_reward_is_pbrs_only():
     env = RedactionEnvironment(task_id="gdpr_contract_easy", window_size=30)
     env.reset(seed=0)
 
@@ -356,5 +351,5 @@ def test_prev_chunk_reward_depends_on_cursor_position():
     env.cursor = min(len(env.current_doc["text"]) - 1, env.window_size * 2)
     _, reward_mid, _, _ = env.step(RedactionAction(action_type=ActionType.PREV_CHUNK))
 
-    assert reward_start.components["progress_bonus"] == -0.05
-    assert reward_mid.components["progress_bonus"] == 0.0
+    assert "progress_bonus" not in reward_start.components
+    assert "progress_bonus" not in reward_mid.components
