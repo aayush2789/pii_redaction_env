@@ -26,7 +26,7 @@ BENCHMARK = os.getenv("BENCHMARK") or "pii-redaction-env"
 
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.0"))
 OPENAI_SEED = int(os.getenv("OPENAI_SEED", "42"))
-INFERENCE_MAX_STEPS = int(os.getenv("INFERENCE_MAX_STEPS", "30"))
+INFERENCE_MAX_STEPS = int(os.getenv("INFERENCE_MAX_STEPS", "100"))
 REQUEST_TIMEOUT_S = float(os.getenv("REQUEST_TIMEOUT_S", "45"))
 
 TASKS = ["gdpr_contract_easy", "hipaa_medical_medium", "security_logs_hard"]
@@ -34,12 +34,23 @@ TASKS = ["gdpr_contract_easy", "hipaa_medical_medium", "security_logs_hard"]
 AUTH_BLOCK_REASON: Optional[str] = None
 BACKEND_BLOCK_REASON: Optional[str] = None
 
-PII_REGEX_PATTERNS = [
-    r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
-    r"\b\d{3}[-.]\d{4}\b",
-    r"\b\d{3}[-.]\d{3}[-.]\d{4}\b",
-    r"\b\d{4}-\d{2}-\d{2}\b",
-]
+LABEL_PATTERNS: Dict[str, List[str]] = {
+    "EMAIL": [r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"],
+    "PHONE": [
+        r"\b(\+?1[\s\-.]?)?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}\b",
+        r"\b\d{3}[-.]\d{4}\b",
+    ],
+    "SSN": [r"\b\d{3}[-\s]\d{2}[-\s]\d{4}\b"],
+    "DOB": [
+        r"\b\d{4}-\d{2}-\d{2}\b",
+        r"\b\d{2}/\d{2}/\d{4}\b",
+        r"\b\d{2}-\d{2}-\d{4}\b",
+    ],
+    "NAME": [],
+    "ADDRESS": [],
+}
+
+PII_REGEX_PATTERNS = [pattern for patterns in LABEL_PATTERNS.values() for pattern in patterns]
 
 
 def _is_gemma4_nvidia_model() -> bool:
@@ -121,6 +132,14 @@ You are a GDPR/HIPAA compliance analyst performing PII redaction on a document.
 Task: identify and redact ALL personally identifiable information using precise
 absolute character indices. PII types: EMAIL, PHONE, SSN, NAME, ADDRESS, DOB.
 
+Label guidance:
+- a word or full name of a person -> NAME
+- a date in any format -> DOB
+- a street address -> ADDRESS
+- an email address -> EMAIL
+- a phone number -> PHONE
+- a social security number -> SSN
+
 IMPORTANT — Obfuscated PII patterns to watch for:
 - Emails: "john dot smith at gmail dot com", "j_doe at mail dot net"
 - Phones: "five five five-0199", "area code four-one-five then 555-0187"
@@ -138,17 +157,25 @@ Current window (chars {obs.cursor_position}-{obs.cursor_position + len(obs.visib
 Progress: {obs.progress_pct:.0%} | Already redacted: {obs.redacted_spans}
 Previous actions: {obs.previous_actions}
 
+Worked example for absolute indexing:
+1. cursor_position = 50
+2. visible_text = "Patient John Smith lived"
+3. The word "John" starts at relative offset 8 in visible_text
+4. absolute_start = 50 + 8 = 58
+5. If "John" is the target span, its absolute indices are start=58 and end=62
+
 Return strict JSON only, one of:
-{{"action": "ANNOTATE", "start": <abs_start>, "end": <abs_end>, "label": "<PII_TYPE>"}}
-{{"action": "REDACT", "start": <abs_start>, "end": <abs_end>}}
+{{"action": "REDACT", "start": <abs_start>, "end": <abs_end>, "label": "<PII_TYPE>"}}
 {{"action": "NEXT_CHUNK"}}
 {{"action": "SKIP"}}
 {{"action": "FINISH"}}
 
 Rules:
-- ANNOTATE: Preferred action! Redact one PII span AND label its type (EMAIL, PHONE, SSN, NAME, ADDRESS, DOB).
-- REDACT: mark one PII span using absolute offsets (without a label, less preferred but valid).
+- REDACT: mark one PII span using absolute offsets and always include its label.
   Formula: absolute_index = cursor_position + relative_offset_in_visible_text.
+- Example: if cursor_position=50, visible_text="Patient John Smith lived", and "John" starts at relative offset 8,
+    then absolute_start = 50 + 8 = 58 and absolute_end = 62.
+- Use the label guidance above when choosing REDACT labels; wrong labels are penalized.
 - NEXT_CHUNK: advance to next unseen section. Use after all PII in current window is handled.
 - SKIP: no PII found in current window, equivalent to acknowledging and waiting.
 - FINISH: only when progress >= 95% AND no remaining PII to redact.
@@ -161,9 +188,20 @@ Rules:
 def _action_to_string(action: RedactionAction) -> str:
     if action.action_type == ActionType.REDACT:
         return f"REDACT({action.start},{action.end})"
-    if action.action_type == ActionType.ANNOTATE:
-        return f"ANNOTATE({action.start},{action.end},{action.label})"
     return action.action_type.value
+
+
+def _label_from_text(text: str) -> str:
+    candidate = (text or "").strip()
+    if re.fullmatch(LABEL_PATTERNS["EMAIL"][0], candidate, flags=re.IGNORECASE):
+        return "EMAIL"
+    if re.fullmatch(LABEL_PATTERNS["SSN"][0], candidate, flags=re.IGNORECASE):
+        return "SSN"
+    if re.fullmatch(LABEL_PATTERNS["PHONE"][0], candidate, flags=re.IGNORECASE):
+        return "PHONE"
+    if re.fullmatch(LABEL_PATTERNS["DOB"][0], candidate, flags=re.IGNORECASE):
+        return "DOB"
+    return "NAME"
 
 
 def _coerce_action(payload: Dict[str, Any], obs) -> Tuple[RedactionAction, Optional[str]]:
@@ -173,12 +211,22 @@ def _coerce_action(payload: Dict[str, Any], obs) -> Tuple[RedactionAction, Optio
         return RedactionAction(action_type=ActionType.NEXT_CHUNK), "missing_action_type"
 
     action_value = str(payload.get("action_type", "")).upper()
-    if action_value in (ActionType.REDACT.value, ActionType.ANNOTATE.value):
+    if action_value == ActionType.REDACT.value:
         try:
             raw_start = int(payload.get("start"))
             raw_end = int(payload.get("end"))
-            snapped_start, snapped_end = _snap_redact_span(obs, raw_start, raw_end)
-            payload = {**payload, "start": snapped_start, "end": snapped_end}
+            label_value = payload.get("label")
+            snapped_start, snapped_end = _snap_redact_span(
+                obs,
+                raw_start,
+                raw_end,
+                label=str(label_value) if label_value else None,
+            )
+            if not label_value:
+                rel_start = max(0, snapped_start - int(obs.cursor_position))
+                rel_end = max(rel_start + 1, snapped_end - int(obs.cursor_position))
+                label_value = _label_from_text((obs.visible_text or "")[rel_start:rel_end])
+            payload = {**payload, "label": label_value, "start": snapped_start, "end": snapped_end}
         except Exception:
             pass
 
@@ -188,10 +236,14 @@ def _coerce_action(payload: Dict[str, Any], obs) -> Tuple[RedactionAction, Optio
         return RedactionAction(action_type=ActionType.NEXT_CHUNK), str(exc)
 
 
-def _snap_redact_span(obs, raw_start: int, raw_end: int) -> Tuple[int, int]:
+def _snap_redact_span(obs, raw_start: int, raw_end: int, label: Optional[str] = None) -> Tuple[int, int]:
     text = obs.visible_text or ""
     if not text:
         return raw_start, raw_end
+
+    patterns = LABEL_PATTERNS.get(label, []) if label else []
+    if not patterns:
+        patterns = PII_REGEX_PATTERNS
 
     window_start = int(obs.cursor_position)
     window_end = window_start + len(text)
@@ -208,7 +260,7 @@ def _snap_redact_span(obs, raw_start: int, raw_end: int) -> Tuple[int, int]:
     start_candidates: List[int] = []
     end_candidates: List[int] = []
 
-    for pattern in PII_REGEX_PATTERNS:
+    for pattern in patterns:
         for match in re.finditer(pattern, scan_text, flags=re.IGNORECASE):
             start_candidates.append(window_start + scan_left + match.start())
             end_candidates.append(window_start + scan_left + match.end())
@@ -287,7 +339,13 @@ def _fallback_action(obs) -> RedactionAction:
         if rel_span is not None:
             start = obs.cursor_position + rel_span[0]
             end = obs.cursor_position + rel_span[1]
-            return RedactionAction(action_type=ActionType.REDACT, start=start, end=end)
+            span_text = (obs.visible_text or "")[rel_span[0]:rel_span[1]]
+            return RedactionAction(
+                action_type=ActionType.REDACT,
+                start=start,
+                end=end,
+                label=_label_from_text(span_text),
+            )
 
     if obs.progress_pct >= 0.98:
         return RedactionAction(action_type=ActionType.FINISH)
@@ -301,6 +359,16 @@ def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
         return _fallback_action(obs), AUTH_BLOCK_REASON
     if BACKEND_BLOCK_REASON is not None:
         return _fallback_action(obs), BACKEND_BLOCK_REASON
+
+    trailing_next_chunks = 0
+    for previous_action in reversed(obs.previous_actions or []):
+        if previous_action == "NEXT_CHUNK":
+            trailing_next_chunks += 1
+        else:
+            break
+
+    if trailing_next_chunks >= 3 and obs.cursor_position >= obs.document_length - len(obs.visible_text):
+        return RedactionAction(action_type=ActionType.FINISH), "cursor_clamped"
 
     prompt = _build_prompt(obs)
 

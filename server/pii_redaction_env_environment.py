@@ -1,5 +1,6 @@
 import math
 import random
+import re
 from collections import deque
 from typing import Dict, List, Optional, Tuple
 
@@ -16,6 +17,7 @@ try:
         RedactionReward,
         TaskGrade,
     )
+    from ..utils import iou as _iou_fn
 except ImportError:
     from models import (
         ActionType,
@@ -25,6 +27,7 @@ except ImportError:
         RedactionReward,
         TaskGrade,
     )
+    from utils import iou as _iou_fn
 from .tasks import TASKS, get_task, load_documents
 
 
@@ -48,7 +51,6 @@ class RedactionEnvironment(Environment):
         self.total_redacted_chars = 0
         self.detected_spans: List[Tuple[int, int]] = []
         self._recent_redact_spans: deque = deque(maxlen=10)
-        self.annotations: List[Dict] = []  # {start, end, label, correct}
         self._seed = 0
 
         if task_id is not None:
@@ -89,7 +91,6 @@ class RedactionEnvironment(Environment):
         self.previous_actions = []
         self.total_redacted_chars = 0
         self._recent_redact_spans = deque(maxlen=10)
-        self.annotations = []
         self._state.step_count = 0
 
         return self._build_observation()
@@ -119,41 +120,21 @@ class RedactionEnvironment(Environment):
             if start < 0 or end <= start or end > len(self.current_doc["text"]):
                 invalid_action = True
             else:
-                self.redacted_spans.append((start, end))
-                self.detected_spans.append((start, end))
-                self.total_redacted_chars = self._merged_span_length(self.redacted_spans)
-
-                entity_text = self.current_doc["text"][start:end]
-                # Use agent-provided label if present, otherwise auto-assign
-                label = action.label if action.label else self._best_label(start, end)
-                self.detected_entities.append(
-                    PIIEntity(label=label, start=start, end=end, text=entity_text)
+                already_detected = any(
+                    _iou_fn((start, end), (detected.start, detected.end)) > 0.8
+                    for detected in self.detected_entities
                 )
+                if already_detected:
+                    invalid_action = True
+                else:
+                    self.redacted_spans.append((start, end))
+                    self.detected_spans.append((start, end))
+                    self.total_redacted_chars = self._merged_span_length(self.redacted_spans)
 
-        elif action.action_type == ActionType.ANNOTATE:
-            start = action.start if action.start is not None else -1
-            end = action.end if action.end is not None else -1
-            agent_label = action.label
-            if start < 0 or end <= start or end > len(self.current_doc["text"]) or agent_label is None:
-                invalid_action = True
-            else:
-                # ANNOTATE = REDACT + explicit label assignment
-                self.redacted_spans.append((start, end))
-                self.detected_spans.append((start, end))
-                self.total_redacted_chars = self._merged_span_length(self.redacted_spans)
-
-                entity_text = self.current_doc["text"][start:end]
-                gt_label = self._best_label(start, end)
-                label_correct = (agent_label == gt_label)
-                self.annotations.append({
-                    "start": start, "end": end,
-                    "agent_label": agent_label, "gt_label": gt_label,
-                    "correct": label_correct,
-                })
-                # Store the agent's chosen label in detected entities
-                self.detected_entities.append(
-                    PIIEntity(label=agent_label, start=start, end=end, text=entity_text)
-                )
+                    entity_text = self.current_doc["text"][start:end]
+                    self.detected_entities.append(
+                        PIIEntity(label=action.label, start=start, end=end, text=entity_text)
+                    )
 
         elif action.action_type == ActionType.FINISH:
             self.done = True
@@ -207,19 +188,19 @@ class RedactionEnvironment(Environment):
             progress = self._current_progress()
             components["progress_bonus"] = round(0.05 * (1.0 - progress), 4)
         elif action.action_type == ActionType.PREV_CHUNK:
-            components["progress_bonus"] = -0.05
+            at_or_near_start = self.cursor <= self.window_size // 2
+            components["progress_bonus"] = -0.05 if at_or_near_start else 0.0
         else:
             components["progress_bonus"] = 0.0
 
         tp_bonus = 0.0
         fp_penalty = 0.0
         duplicate_penalty = 0.0
-        annotation_bonus = 0.0
         calibration_penalty = 0.0
         explainability_bonus = 0.0
 
         is_span_action = (
-            action.action_type in (ActionType.REDACT, ActionType.ANNOTATE)
+            action.action_type == ActionType.REDACT
             and action.start is not None and action.end is not None
         )
 
@@ -229,14 +210,14 @@ class RedactionEnvironment(Environment):
             # Escalating duplicate-action penalty
             dup_count = sum(
                 1 for prev in self._recent_redact_spans
-                if self._iou(span, prev) > 0.8
+                if _iou_fn(span, prev) > 0.8
             )
             if dup_count > 0:
                 duplicate_penalty = -0.2 * dup_count
             self._recent_redact_spans.append(span)
 
             best_iou = (
-                max(self._iou(span, (gt.start, gt.end)) for gt in self.ground_truth)
+                max(_iou_fn(span, (gt.start, gt.end)) for gt in self.ground_truth)
                 if self.ground_truth
                 else 0.0
             )
@@ -247,14 +228,6 @@ class RedactionEnvironment(Environment):
                 fp_penalty = -0.3
 
             calibration_penalty = -0.1 * abs(action.confidence - best_iou)
-
-            # ANNOTATE label-accuracy bonus: reward correct PII type classification
-            if action.action_type == ActionType.ANNOTATE and action.label and best_iou > 0.6:
-                gt_label = self._best_label(action.start, action.end)
-                if action.label == gt_label:
-                    annotation_bonus = 0.15  # correct label
-                else:
-                    annotation_bonus = -0.1  # wrong label on valid span
 
             if action.justification:
                 label = self._best_label(action.start, action.end)
@@ -273,12 +246,11 @@ class RedactionEnvironment(Environment):
         finish_bonus = 0.0
         if action.action_type == ActionType.FINISH:
             running_f1 = self._compute_running_f1()
-            finish_bonus = min(0.7, 0.3 + (0.4 * running_f1))
+            finish_bonus = min(0.7, 0.7 * running_f1)
 
         components["tp_bonus"] = round(tp_bonus, 4)
         components["fp_penalty"] = round(fp_penalty, 4)
         components["duplicate_penalty"] = round(duplicate_penalty, 4)
-        components["annotation_bonus"] = round(annotation_bonus, 4)
         components["calibration_penalty"] = round(calibration_penalty, 4)
         components["explainability_bonus"] = round(explainability_bonus, 4)
         components["finish_bonus"] = round(finish_bonus, 4)
@@ -290,7 +262,7 @@ class RedactionEnvironment(Environment):
         matched_gt = 0
         for gt in self.ground_truth:
             if any(
-                self._iou((gt.start, gt.end), (det.start, det.end)) > 0.6
+                _iou_fn((gt.start, gt.end), (det.start, det.end)) > 0.6
                 for det in self.detected_entities
             ):
                 matched_gt += 1
@@ -324,7 +296,6 @@ class RedactionEnvironment(Environment):
             cursor_position=self.cursor,
             document_length=len(text),
             redacted_spans=list(self.redacted_spans),
-            annotations=list(self.annotations),
             progress_pct=1.0 if self.done else round(window_end / len(text), 4),
             previous_actions=list(self.previous_actions[-5:]),
             done=self.done,
@@ -360,12 +331,25 @@ class RedactionEnvironment(Environment):
 
     def _best_label(self, start: int, end: int) -> str:
         if not self.ground_truth:
-            return "NAME"
+            return self._regex_label(start, end)
 
         span = (start, end)
-        best = max(self.ground_truth, key=lambda gt: self._iou(span, (gt.start, gt.end)))
-        if self._iou(span, (best.start, best.end)) > 0.6:
+        best = max(self.ground_truth, key=lambda gt: _iou_fn(span, (gt.start, gt.end)))
+        if _iou_fn(span, (best.start, best.end)) > 0.6:
             return best.label
+        return self._regex_label(start, end)
+
+    def _regex_label(self, start: int, end: int) -> str:
+        """Heuristic label based on span text when no GT match exists."""
+        text = self.current_doc["text"][start:end].strip() if self.current_doc is not None else ""
+        if re.fullmatch(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", text):
+            return "EMAIL"
+        if re.fullmatch(r"\d{3}[-\s]\d{2}[-\s]\d{4}", text):
+            return "SSN"
+        if re.fullmatch(r"(\+?1[\s\-.]?)?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}", text):
+            return "PHONE"
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}|\d{2}-\d{2}-\d{4}", text):
+            return "DOB"
         return "NAME"
 
     def _merged_span_length(self, spans: List[Tuple[int, int]]) -> int:
@@ -396,7 +380,7 @@ class RedactionEnvironment(Environment):
                     continue
                 # Fix 5: Relaxed matching — IoU-only, no label requirement
                 # Prevents double-penalizing near-misses with auto-assigned labels
-                score = self._iou((det.start, det.end), (gt.start, gt.end))
+                score = _iou_fn((det.start, det.end), (gt.start, gt.end))
                 if score > 0.6 and score > best_iou:
                     best_iou = score
                     best_idx = idx
@@ -414,20 +398,10 @@ class RedactionEnvironment(Environment):
         return round(2 * precision * recall / (precision + recall), 4)
 
     @staticmethod
-    def _iou(span_a: Tuple[int, int], span_b: Tuple[int, int]) -> float:
-        a0, a1 = span_a
-        b0, b1 = span_b
-        intersection = max(0, min(a1, b1) - max(a0, b0))
-        union = max(a1, b1) - min(a0, b0)
-        return (intersection / union) if union > 0 else 0.0
-
-    @staticmethod
     def _action_to_string(action: RedactionAction) -> str:
         if action.action_type == ActionType.REDACT:
             lbl = f",{action.label}" if action.label else ""
             return f"REDACT({action.start},{action.end}{lbl})"
-        if action.action_type == ActionType.ANNOTATE:
-            return f"ANNOTATE({action.start},{action.end},{action.label})"
         if action.action_type == ActionType.PREV_CHUNK:
             return "PREV_CHUNK"
         return action.action_type.value

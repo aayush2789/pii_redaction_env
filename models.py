@@ -21,7 +21,6 @@ PII_LABELS = ("EMAIL", "PHONE", "SSN", "NAME", "ADDRESS", "DOB")
 
 class ActionType(str, Enum):
     REDACT = "REDACT"
-    ANNOTATE = "ANNOTATE"
     SKIP = "SKIP"
     NEXT_CHUNK = "NEXT_CHUNK"
     PREV_CHUNK = "PREV_CHUNK"
@@ -52,20 +51,13 @@ class RedactionAction(BaseModel):
     justification: Optional[str] = None
 
     @model_validator(mode="after")
-    def require_span_for_redact(self):
+    def require_fields_for_redact(self):
         if self.action_type == ActionType.REDACT and (
             self.start is None or self.end is None
         ):
             raise ValueError("REDACT requires start/end")
-        return self
-
-    @model_validator(mode="after")
-    def require_fields_for_annotate(self):
-        if self.action_type == ActionType.ANNOTATE:
-            if self.start is None or self.end is None:
-                raise ValueError("ANNOTATE requires start/end")
-            if self.label is None:
-                raise ValueError("ANNOTATE requires label")
+        if self.action_type == ActionType.REDACT and self.label is None:
+            raise ValueError("REDACT requires label")
         return self
 
 
@@ -76,7 +68,6 @@ class RedactionObservation(BaseModel):
     cursor_position: int
     document_length: int
     redacted_spans: List[Tuple[int, int]]
-    annotations: List[Dict] = Field(default_factory=list)
     progress_pct: float
     previous_actions: List[str]
     done: bool

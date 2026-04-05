@@ -20,30 +20,12 @@ A simple test environment that echoes back messages. Perfect for testing the env
 The simplest way to use the Pii Redaction Env environment is through the `PiiRedactionEnv` class:
 
 ```python
-from pii_redaction_env import PiiRedactionAction, PiiRedactionEnv
+from pii_redaction_env import RedactionAction, RedactionEnvironment, ActionType
 
-try:
-    # Create environment from Docker image
-    pii_redaction_envenv = PiiRedactionEnv.from_docker_image("pii_redaction_env-env:latest")
-
-    # Reset
-    result = pii_redaction_envenv.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-
-    # Send multiple messages
-    messages = ["Hello, World!", "Testing echo", "Final message"]
-
-    for msg in messages:
-        result = pii_redaction_envenv.step(PiiRedactionAction(message=msg))
-        print(f"Sent: '{msg}'")
-        print(f"  → Echoed: '{result.observation.echoed_message}'")
-        print(f"  → Length: {result.observation.message_length}")
-        print(f"  → Reward: {result.reward}")
-
-finally:
-    # Always clean up
-    pii_redaction_envenv.close()
+# Note: In a real agent loop, you would use the OpenEnv client
+# This environment is designed for serious PII redaction tasks.
 ```
+
 
 That's it! The `PiiRedactionEnv.from_docker_image()` method handles:
 - Starting the Docker container
@@ -118,23 +100,27 @@ The deployed space includes:
 
 ## Environment Details
 
-### Action
-**PiiRedactionAction**: Contains a single field
-- `message` (str) - The message to echo back
+### Action: `RedactionAction`
+- **action_type**: `REDACT`, `ANNOTATE`, `SKIP`, `NEXT_CHUNK`, `PREV_CHUNK`, `FINISH`.
+- **start / end**: Integer indices for the span to redact/annotate.
+- **label**: PII type (`EMAIL`, `PHONE`, `SSN`, `NAME`, `ADDRESS`, `DOB`).
+- **confidence**: Agent's confidence in the action (0.0-1.0).
+- **justification**: Natural language reasoning for the action.
 
-### Observation
-**PiiRedactionObservation**: Contains the echo response and metadata
-- `echoed_message` (str) - The message echoed back
-- `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
+### Observation: `RedactionObservation`
+- **visible_text**: The current chunk of text being processed (with existing redactions masked).
+- **cursor_position**: Current offset in the document.
+- **redacted_spans**: List of all spans redacted so far.
+- **progress_pct**: Fraction of the document processed.
 
-### Reward
-The reward is calculated as: `message_length × 0.1`
-- "Hi" → reward: 0.2
-- "Hello, World!" → reward: 1.3
-- Empty message → reward: 0.0
+### Reward Function
+The environment provides a dense reward signal:
+- **TP Bonus**: Based on Intersection over Union (IoU) with ground truth.
+- **FP Penalty**: Penalizes redacting non-PII text.
+- **Annotation Bonus**: Extra reward for correctly labeling the PII type.
+- **Explainability Bonus**: Small bonus for justifications matching PII keywords.
+- **Progress Signal**: Small rewards for navigating through the document via `NEXT_CHUNK`.
+
 
 ## Advanced Usage
 

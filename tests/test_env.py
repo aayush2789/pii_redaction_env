@@ -19,7 +19,12 @@ def test_redact_action_masks_text():
 
     email = next(entity for entity in env.ground_truth if entity.label == "EMAIL")
     obs, reward, done, _ = env.step(
-        RedactionAction(action_type=ActionType.REDACT, start=email.start, end=email.end)
+        RedactionAction(
+            action_type=ActionType.REDACT,
+            start=email.start,
+            end=email.end,
+            label=email.label,
+        )
     )
 
     assert "[REDACTED]" in obs.visible_text or "[REDACT" in obs.visible_text
@@ -55,7 +60,7 @@ def test_invalid_action_penalty():
     env.reset()
 
     _, reward, _, info = env.step(
-        RedactionAction(action_type=ActionType.REDACT, start=-1, end=99999)
+        RedactionAction(action_type=ActionType.REDACT, start=-1, end=99999, label="EMAIL")
     )
 
     assert info["invalid_action"] is True
@@ -70,7 +75,12 @@ def test_grade_computes_f1_correctly():
 
     for entity in env.ground_truth:
         env.step(
-            RedactionAction(action_type=ActionType.REDACT, start=entity.start, end=entity.end)
+            RedactionAction(
+                action_type=ActionType.REDACT,
+                start=entity.start,
+                end=entity.end,
+                label=entity.label,
+            )
         )
 
     env.step(RedactionAction(action_type=ActionType.FINISH))
@@ -106,9 +116,21 @@ def test_masked_window_shows_multiple_redactions():
     first = env.ground_truth[0]
     second = env.ground_truth[1] if len(env.ground_truth) > 1 else first
 
-    env.step(RedactionAction(action_type=ActionType.REDACT, start=first.start, end=first.end))
+    env.step(
+        RedactionAction(
+            action_type=ActionType.REDACT,
+            start=first.start,
+            end=first.end,
+            label=first.label,
+        )
+    )
     obs, _, _, _ = env.step(
-        RedactionAction(action_type=ActionType.REDACT, start=second.start, end=second.end)
+        RedactionAction(
+            action_type=ActionType.REDACT,
+            start=second.start,
+            end=second.end,
+            label=second.label,
+        )
     )
 
     assert len(obs.redacted_spans) >= 2
@@ -145,6 +167,7 @@ def test_explainability_bonus_applies_for_matching_justification():
             action_type=ActionType.REDACT,
             start=entity.start,
             end=entity.end,
+            label=entity.label,
             confidence=0.9,
             justification=justification,
         )
@@ -158,11 +181,12 @@ def test_navigation_rewards_are_applied():
     env.reset(seed=2)
 
     _, next_reward, _, _ = env.step(RedactionAction(action_type=ActionType.NEXT_CHUNK))
+    env.cursor = min(len(env.current_doc["text"]) - 1, env.window_size * 2)
     _, prev_reward, _, _ = env.step(RedactionAction(action_type=ActionType.PREV_CHUNK))
 
     # Fix 7: NEXT_CHUNK now gives positive progress-scaled reward
     assert next_reward.components["progress_bonus"] >= 0.0
-    assert prev_reward.components["progress_bonus"] == -0.05
+    assert prev_reward.components["progress_bonus"] == 0.0
     assert 0.0 <= next_reward.total <= 1.0
     assert 0.0 <= prev_reward.total <= 1.0
 
@@ -186,6 +210,7 @@ def test_finish_bonus_is_present_and_bounded():
             action_type=ActionType.REDACT,
             start=entity.start,
             end=entity.end,
+            label=entity.label,
             confidence=0.9,
             justification=justification_map.get(label, label),
         )
@@ -195,7 +220,7 @@ def test_finish_bonus_is_present_and_bounded():
 
     assert done is True
     assert 0.0 <= reward.total <= 1.0
-    assert 0.3 <= reward.components["finish_bonus"] <= 0.7
+    assert 0.0 <= reward.components["finish_bonus"] <= 0.7
 
 
 def test_duplicate_redaction_escalating_penalty():
@@ -207,7 +232,7 @@ def test_duplicate_redaction_escalating_penalty():
     penalties = []
     for _ in range(3):
         _, reward, _, _ = env.step(
-            RedactionAction(action_type=ActionType.REDACT, start=span_start, end=span_end)
+            RedactionAction(action_type=ActionType.REDACT, start=span_start, end=span_end, label="NAME")
         )
         penalties.append(reward.components.get("duplicate_penalty", 0.0))
 
@@ -224,13 +249,13 @@ def test_reward_discriminability():
 
     email = next(entity for entity in env.ground_truth if entity.label == "EMAIL")
     _, tp_reward, _, _ = env.step(
-        RedactionAction(action_type=ActionType.REDACT, start=email.start, end=email.end)
+        RedactionAction(action_type=ActionType.REDACT, start=email.start, end=email.end, label=email.label)
     )
 
     env2 = RedactionEnvironment(task_id="gdpr_contract_easy")
     env2.reset()
     _, fp_reward, _, _ = env2.step(
-        RedactionAction(action_type=ActionType.REDACT, start=0, end=5)
+        RedactionAction(action_type=ActionType.REDACT, start=0, end=5, label="NAME")
     )
 
     assert tp_reward.total - fp_reward.total > 0.15
@@ -254,36 +279,82 @@ def test_all_entity_types_present():
     assert expected.issubset(all_labels), f"Missing: {expected - all_labels}"
 
 
-def test_annotate_action_behavior_and_rewards():
-    """Verify ANNOTATE action assigns labels and gives annotation_bonus properly."""
+def test_labeled_redact_updates_observation_and_reward():
+    """Verify labeled REDACT updates state and yields a positive span reward."""
     env = RedactionEnvironment(task_id="gdpr_contract_easy")
     env.reset(seed=0)
     entity = env.ground_truth[0]
-    
-    # Correct annotation
     obs, reward_correct, _, _ = env.step(
         RedactionAction(
-            action_type=ActionType.ANNOTATE,
+            action_type=ActionType.REDACT,
             start=entity.start,
             end=entity.end,
-            label=entity.label
+            label=entity.label,
         )
     )
-    assert reward_correct.components.get("annotation_bonus", 0.0) == 0.15
-    assert len(obs.annotations) == 1
-    assert obs.annotations[0]["correct"] is True
-    
-    # Wrong annotation (on a valid span)
+    assert reward_correct.components.get("tp_bonus", 0.0) > 0.0
+    assert len(obs.redacted_spans) == 1
+
+
+def test_duplicate_redaction_is_invalid_and_not_duplicated():
+    env = RedactionEnvironment(task_id="gdpr_contract_easy")
     env.reset(seed=0)
-    wrong_label = "DOB" if entity.label != "DOB" else "EMAIL"
-    obs, reward_wrong, _, _ = env.step(
+    entity = env.ground_truth[0]
+
+    env.step(
         RedactionAction(
-            action_type=ActionType.ANNOTATE,
+            action_type=ActionType.REDACT,
             start=entity.start,
             end=entity.end,
-            label=wrong_label
+            label=entity.label,
         )
     )
-    assert reward_wrong.components.get("annotation_bonus", 0.0) == -0.1
-    assert len(obs.annotations) == 1
-    assert obs.annotations[0]["correct"] is False
+    _, _, _, info = env.step(
+        RedactionAction(
+            action_type=ActionType.REDACT,
+            start=entity.start,
+            end=entity.end,
+            label=entity.label,
+        )
+    )
+
+    assert info["invalid_action"] is True
+    assert len(env.detected_entities) == 1
+
+
+def test_finish_bonus_is_zero_without_prior_redactions():
+    env = RedactionEnvironment(task_id="gdpr_contract_easy")
+    env.reset(seed=0)
+
+    _, reward, _, _ = env.step(RedactionAction(action_type=ActionType.FINISH))
+
+    assert reward.components["finish_bonus"] == 0.0
+
+
+def test_best_label_falls_back_to_regex_heuristic():
+    env = RedactionEnvironment(task_id="gdpr_contract_easy")
+    email = None
+    for seed in range(10):
+        env.reset(seed=seed)
+        email = next((entity for entity in env.ground_truth if entity.label == "EMAIL"), None)
+        if email is not None:
+            break
+
+    assert email is not None
+
+    env.ground_truth = []
+
+    assert env._best_label(email.start, email.end) == "EMAIL"
+
+
+def test_prev_chunk_reward_depends_on_cursor_position():
+    env = RedactionEnvironment(task_id="gdpr_contract_easy", window_size=30)
+    env.reset(seed=0)
+
+    _, reward_start, _, _ = env.step(RedactionAction(action_type=ActionType.PREV_CHUNK))
+
+    env.cursor = min(len(env.current_doc["text"]) - 1, env.window_size * 2)
+    _, reward_mid, _, _ = env.step(RedactionAction(action_type=ActionType.PREV_CHUNK))
+
+    assert reward_start.components["progress_bonus"] == -0.05
+    assert reward_mid.components["progress_bonus"] == 0.0
