@@ -1,92 +1,101 @@
 [
   {
     "id": "hard_doc_001",
-    "text": "Tier-2 support transcript records customer saying reach john dot smith at gmail dot com and call me at five five five-0199 when shipment updates post. Agent later notes that Apple support references the company, not a person. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Tier-2 support transcript records customer saying reach john dot smith at gmail dot com and call me at five five five-0199 when shipment updates post. Agent later notes that Apple support references the company, not a person. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Tier-2 support transcript records customer saying reach john dot smith at gmail dot com and call me at five five five-0199 when shipment updates post. Agent later notes that Apple support references the company, not a person. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Tier-2 support transcript records customer saying reach john dot smith at gmail dot com and call me at five five five-0199 when shipment updates post. Agent later notes that Apple support references the company, not a person. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.",
+    "text": "Tier-2 support transcript records customer saying reach john dot smith at gmail dot com and call me at five five five-0199 when shipment updates post. Agent later notes that Apple support references the company, not a person. The customer also asked the rep to forward details to his alternate address jsmith at yahoo dot com for tracking. Ticket was escalated under protocol FALCON-9 with no further personal data disclosed during the handoff. System logs show auth token refresh cycles and CDN cache invalidation events that are strictly infrastructure artifacts.",
     "entities": [
-      {
-        "label": "EMAIL",
-        "start": 56,
-        "end": 87,
-        "text": "john dot smith at gmail dot com"
-      },
-      {
-        "label": "PHONE",
-        "start": 103,
-        "end": 122,
-        "text": "five five five-0199"
-      }
+      {"label": "EMAIL", "start": 56, "end": 87, "text": "john dot smith at gmail dot com"},
+      {"label": "PHONE", "start": 103, "end": 122, "text": "five five five-0199"},
+      {"label": "EMAIL", "start": 297, "end": 322, "text": "jsmith at yahoo dot com"}
     ]
   },
   {
     "id": "hard_doc_002",
-    "text": "Incident bridge notes include statement my wife Sarah called from 1 (800) 555-1212 and asked for a supervisor. Later line says contact Apple Inc legal queue if escalation continues, which is organizational not personal. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Incident bridge notes include statement my wife Sarah called from 1 (800) 555-1212 and asked for a supervisor. Later line says contact Apple Inc legal queue if escalation continues, which is organizational not personal. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Incident bridge notes include statement my wife Sarah called from 1 (800) 555-1212 and asked for a supervisor. Later line says contact Apple Inc legal queue if escalation continues, which is organizational not personal. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Incident bridge notes include statement my wife Sarah called from 1 (800) 555-1212 and asked for a supervisor. Later line says contact Apple Inc legal queue if escalation continues, which is organizational not personal. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.",
+    "text": "Incident bridge notes include statement my wife Sarah called from 1 (800) 555-1212 and asked for a supervisor. Her SSN ending in 4532 was referenced during identity verification. Later line says contact Apple Inc legal queue if escalation continues, which is organizational not personal. The bridge moderator confirmed the case owner as Sarah Mitchell before closing the loop. Network topology diagrams and failover configurations discussed in thread are non-PII infrastructure data.",
     "entities": [
-      {
-        "label": "NAME",
-        "start": 48,
-        "end": 53,
-        "text": "Sarah"
-      },
-      {
-        "label": "PHONE",
-        "start": 66,
-        "end": 82,
-        "text": "1 (800) 555-1212"
-      }
+      {"label": "NAME", "start": 48, "end": 53, "text": "Sarah"},
+      {"label": "PHONE", "start": 66, "end": 82, "text": "1 (800) 555-1212"},
+      {"label": "NAME", "start": 337, "end": 352, "text": "Sarah Mitchell"}
     ]
   },
   {
     "id": "hard_doc_003",
-    "text": "Chat excerpt: user typed marie-anne at proton dot me as backup and then sent numeric variant 917.555.3001. Analyst warns that account alias APPLE is a product code and must not be redacted as a human identity. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Chat excerpt: user typed marie-anne at proton dot me as backup and then sent numeric variant 917.555.3001. Analyst warns that account alias APPLE is a product code and must not be redacted as a human identity. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Chat excerpt: user typed marie-anne at proton dot me as backup and then sent numeric variant 917.555.3001. Analyst warns that account alias APPLE is a product code and must not be redacted as a human identity. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Chat excerpt: user typed marie-anne at proton dot me as backup and then sent numeric variant 917.555.3001. Analyst warns that account alias APPLE is a product code and must not be redacted as a human identity. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.",
+    "text": "Chat excerpt: user typed marie-anne at proton dot me as backup and then sent numeric variant 917.555.3001. Follow-up messages reference Project Orion milestones and Sprint velocity metrics which are not personally identifiable. Analyst warns that account alias APPLE is a product code and must not be redacted as a human identity. User later clarified DOB is nineteen eighty-five march twelve for account recovery. The session ended after automated survey dispatch.",
     "entities": [
-      {
-        "label": "EMAIL",
-        "start": 25,
-        "end": 52,
-        "text": "marie-anne at proton dot me"
-      },
-      {
-        "label": "PHONE",
-        "start": 93,
-        "end": 105,
-        "text": "917.555.3001"
-      }
+      {"label": "EMAIL", "start": 25, "end": 52, "text": "marie-anne at proton dot me"},
+      {"label": "PHONE", "start": 93, "end": 105, "text": "917.555.3001"},
+      {"label": "DOB", "start": 351, "end": 390, "text": "nineteen eighty-five march twelve"}
     ]
   },
   {
     "id": "hard_doc_004",
-    "text": "Abuse review ticket states guardian name is Dr. Lee and callback is +1-202-555-8890, while thread also contains phrase contact apple care channel. Moderation guidance says only personal references are removable, product and company nouns stay. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Abuse review ticket states guardian name is Dr. Lee and callback is +1-202-555-8890, while thread also contains phrase contact apple care channel. Moderation guidance says only personal references are removable, product and company nouns stay. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Abuse review ticket states guardian name is Dr. Lee and callback is +1-202-555-8890, while thread also contains phrase contact apple care channel. Moderation guidance says only personal references are removable, product and company nouns stay. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Abuse review ticket states guardian name is Dr. Lee and callback is +1-202-555-8890, while thread also contains phrase contact apple care channel. Moderation guidance says only personal references are removable, product and company nouns stay. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.",
+    "text": "Abuse review ticket states guardian name is Dr. Lee and callback is +1-202-555-8890, while thread also contains phrase contact apple care channel. Moderation guidance says only personal references are removable, product and company nouns stay. Later in the thread, the guardian provided address as 42 Willow Creek Drive for correspondence. The reviewer noted Amazon Web Services outage correlation but that is infrastructure context. Dr. Lee also shared SSN ending 7821 during escalation verification.",
     "entities": [
-      {
-        "label": "NAME",
-        "start": 44,
-        "end": 51,
-        "text": "Dr. Lee"
-      },
-      {
-        "label": "PHONE",
-        "start": 68,
-        "end": 83,
-        "text": "+1-202-555-8890"
-      }
+      {"label": "NAME", "start": 44, "end": 51, "text": "Dr. Lee"},
+      {"label": "PHONE", "start": 68, "end": 83, "text": "+1-202-555-8890"},
+      {"label": "ADDRESS", "start": 299, "end": 321, "text": "42 Willow Creek Drive"},
+      {"label": "NAME", "start": 432, "end": 439, "text": "Dr. Lee"}
     ]
   },
   {
     "id": "hard_doc_005",
-    "text": "Security operations memo captures phrase jordan underscore miles at mail dot net and desk phone 303-555-4421. Conversation also mentions project Falcon and team Orion, both codename entities unrelated to personal identity. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Security operations memo captures phrase jordan underscore miles at mail dot net and desk phone 303-555-4421. Conversation also mentions project Falcon and team Orion, both codename entities unrelated to personal identity. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Security operations memo captures phrase jordan underscore miles at mail dot net and desk phone 303-555-4421. Conversation also mentions project Falcon and team Orion, both codename entities unrelated to personal identity. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.Security operations memo captures phrase jordan underscore miles at mail dot net and desk phone 303-555-4421. Conversation also mentions project Falcon and team Orion, both codename entities unrelated to personal identity. Additional transcript context repeats troubleshooting steps, ticket IDs, and system diagnostics. These operational artifacts are intentionally verbose to simulate long adversarial logs where sensitive data appears sparsely. Reviewers must avoid redacting company entities, SKU references, and automation event labels.",
+    "text": "Security operations memo captures phrase jordan underscore miles at mail dot net and desk phone 303-555-4421. Conversation also mentions project Falcon and team Orion, both codename entities unrelated to personal identity. Jordan later confirmed residential address is 88 Pine Valley Road and provided backup number three-oh-three 555 nine-eight-seven-six for after-hours escalation. Firewall rule changes and VPN tunnel configurations in the memo are IT operations data.",
     "entities": [
-      {
-        "label": "EMAIL",
-        "start": 41,
-        "end": 80,
-        "text": "jordan underscore miles at mail dot net"
-      },
-      {
-        "label": "PHONE",
-        "start": 96,
-        "end": 108,
-        "text": "303-555-4421"
-      }
+      {"label": "EMAIL", "start": 41, "end": 80, "text": "jordan underscore miles at mail dot net"},
+      {"label": "PHONE", "start": 96, "end": 108, "text": "303-555-4421"},
+      {"label": "ADDRESS", "start": 269, "end": 288, "text": "88 Pine Valley Road"},
+      {"label": "PHONE", "start": 314, "end": 354, "text": "three-oh-three 555 nine-eight-seven-six"}
+    ]
+  },
+  {
+    "id": "hard_doc_006",
+    "text": "Compliance flag raised on account belonging to user chen.wei, who typed email as c dot wei at outlook dot com during live chat. Microsoft Teams channel names and Jira board identifiers in the thread are enterprise metadata. The user disclosed SSN two-one-seven 43 8856 verbally and confirmed mailing to 19 Lakeside Terrace, Apt 4B. Automated workflow engine logs and deployment pipeline statuses are operational records that must remain intact.",
+    "entities": [
+      {"label": "NAME", "start": 51, "end": 59, "text": "chen.wei"},
+      {"label": "EMAIL", "start": 80, "end": 112, "text": "c dot wei at outlook dot com"},
+      {"label": "SSN", "start": 243, "end": 270, "text": "two-one-seven 43 8856"},
+      {"label": "ADDRESS", "start": 303, "end": 328, "text": "19 Lakeside Terrace, Apt 4B"}
+    ]
+  },
+  {
+    "id": "hard_doc_007",
+    "text": "Fraud investigation transcript: caller identified herself as Natasha R and gave callback number as area code four-one-five, then 555-0187. She referenced her account under email tasha underscore r at gmail dot com. The analyst noted that Oracle database migration timelines and Kubernetes pod scaling events mentioned in the case are infrastructure artifacts. Caller later said her birthday is July fourth nineteen ninety-two for verification. Service level agreements and uptime metrics are excluded from redaction scope.",
+    "entities": [
+      {"label": "NAME", "start": 61, "end": 70, "text": "Natasha R"},
+      {"label": "PHONE", "start": 99, "end": 137, "text": "area code four-one-five, then 555-0187"},
+      {"label": "EMAIL", "start": 178, "end": 214, "text": "tasha underscore r at gmail dot com"},
+      {"label": "DOB", "start": 398, "end": 432, "text": "July fourth nineteen ninety-two"}
+    ]
+  },
+  {
+    "id": "hard_doc_008",
+    "text": "Escalation notes for ticket T-48291: Customer Robert J. provided his wife's contact as anna dot jones at hotmail dot com and home line 718-555-3344. He mentioned that Google Cloud Platform billing alerts are separate from his personal account. Robert also disclosed residential address as 1204 Magnolia Boulevard, Unit 7C. AWS Lambda function metrics and CloudWatch alarm states referenced in ticket are operational data. His date of birth recorded as oh-three slash fifteen slash seventy-eight.",
+    "entities": [
+      {"label": "NAME", "start": 46, "end": 56, "text": "Robert J."},
+      {"label": "EMAIL", "start": 84, "end": 120, "text": "anna dot jones at hotmail dot com"},
+      {"label": "PHONE", "start": 135, "end": 147, "text": "718-555-3344"},
+      {"label": "ADDRESS", "start": 290, "end": 320, "text": "1204 Magnolia Boulevard, Unit 7C"},
+      {"label": "DOB", "start": 437, "end": 486, "text": "oh-three slash fifteen slash seventy-eight"}
+    ]
+  },
+  {
+    "id": "hard_doc_009",
+    "text": "Data breach notification draft references impacted user Kim Park-Sato whose PII was exposed. Contact registered as k dot park-sato at protonmail dot com with backup phone nine-one-seven 555 two-two-four-one. Address on file: 65 Riverside Drive, Floor 12. Splunk dashboard URLs and Terraform state file paths in the incident report are infrastructure identifiers that should not be redacted. The legal team noted Samsung Electronics and Meta Platforms as corporate entities mentioned in the breach scope, neither of which are personal data.",
+    "entities": [
+      {"label": "NAME", "start": 58, "end": 71, "text": "Kim Park-Sato"},
+      {"label": "EMAIL", "start": 109, "end": 149, "text": "k dot park-sato at protonmail dot com"},
+      {"label": "PHONE", "start": 168, "end": 207, "text": "nine-one-seven 555 two-two-four-one"},
+      {"label": "ADDRESS", "start": 226, "end": 252, "text": "65 Riverside Drive, Floor 12"}
+    ]
+  },
+  {
+    "id": "hard_doc_010",
+    "text": "Internal review board flagged user account linked to devon.blackwell who contacted support saying my number is plus one 646 555 oh-nine-oh-three and email is devon at blackwell dot io. Board meeting minutes and committee voting records are governance documents. Devon also confirmed home at 310 Chestnut Way and social security number three four five dash six seven dash eight nine zero one for identity restoration. Jenkins CI pipeline artifacts and Docker image tags in the review are DevOps metadata.",
+    "entities": [
+      {"label": "NAME", "start": 46, "end": 62, "text": "devon.blackwell"},
+      {"label": "PHONE", "start": 106, "end": 148, "text": "plus one 646 555 oh-nine-oh-three"},
+      {"label": "EMAIL", "start": 163, "end": 188, "text": "devon at blackwell dot io"},
+      {"label": "ADDRESS", "start": 293, "end": 309, "text": "310 Chestnut Way"},
+      {"label": "SSN", "start": 338, "end": 391, "text": "three four five dash six seven dash eight nine zero one"}
     ]
   }
 ]

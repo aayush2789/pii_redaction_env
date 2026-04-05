@@ -1,4 +1,6 @@
+import math
 import random
+from collections import deque
 from typing import Dict, List, Optional, Tuple
 
 from openenv.core.env_server.interfaces import Environment
@@ -35,6 +37,8 @@ class RedactionEnvironment(Environment):
         self.previous_actions: List[str] = []
         self.total_redacted_chars = 0
         self.detected_spans: List[Tuple[int, int]] = []
+        self._recent_redact_spans: deque = deque(maxlen=10)
+        self.annotations: List[Dict] = []  # {start, end, label, correct}
         self._seed = 0
 
         if task_id is not None:
@@ -74,6 +78,8 @@ class RedactionEnvironment(Environment):
         self.done = False
         self.previous_actions = []
         self.total_redacted_chars = 0
+        self._recent_redact_spans = deque(maxlen=10)
+        self.annotations = []
         self._state.step_count = 0
 
         return self._build_observation()
@@ -108,9 +114,35 @@ class RedactionEnvironment(Environment):
                 self.total_redacted_chars = self._merged_span_length(self.redacted_spans)
 
                 entity_text = self.current_doc["text"][start:end]
-                label = self._best_label(start, end)
+                # Use agent-provided label if present, otherwise auto-assign
+                label = action.label if action.label else self._best_label(start, end)
                 self.detected_entities.append(
                     PIIEntity(label=label, start=start, end=end, text=entity_text)
+                )
+
+        elif action.action_type == ActionType.ANNOTATE:
+            start = action.start if action.start is not None else -1
+            end = action.end if action.end is not None else -1
+            agent_label = action.label
+            if start < 0 or end <= start or end > len(self.current_doc["text"]) or agent_label is None:
+                invalid_action = True
+            else:
+                # ANNOTATE = REDACT + explicit label assignment
+                self.redacted_spans.append((start, end))
+                self.detected_spans.append((start, end))
+                self.total_redacted_chars = self._merged_span_length(self.redacted_spans)
+
+                entity_text = self.current_doc["text"][start:end]
+                gt_label = self._best_label(start, end)
+                label_correct = (agent_label == gt_label)
+                self.annotations.append({
+                    "start": start, "end": end,
+                    "agent_label": agent_label, "gt_label": gt_label,
+                    "correct": label_correct,
+                })
+                # Store the agent's chosen label in detected entities
+                self.detected_entities.append(
+                    PIIEntity(label=agent_label, start=start, end=end, text=entity_text)
                 )
 
         elif action.action_type == ActionType.FINISH:
@@ -128,7 +160,8 @@ class RedactionEnvironment(Environment):
         reward = self.compute_reward(action, old_state)
         if invalid_action:
             reward.components["invalid_action_penalty"] = -1.0
-            reward.total = round(reward.total - 1.0, 4)
+            reward.raw_total = round(reward.raw_total - 1.0, 4)
+            reward.total = round(max(0.0, min(1.0, (reward.raw_total + 1.0) / 2.0)), 4)
 
         observation = self._build_observation()
         info = {
@@ -159,8 +192,10 @@ class RedactionEnvironment(Environment):
         del old_state
         components: Dict[str, float] = {}
 
+        # Fix 7: Progress-scaled positive reward for NEXT_CHUNK
         if action.action_type == ActionType.NEXT_CHUNK:
-            components["progress_bonus"] = 0.1
+            progress = self._current_progress()
+            components["progress_bonus"] = round(0.05 * (1.0 - progress), 4)
         elif action.action_type == ActionType.PREV_CHUNK:
             components["progress_bonus"] = -0.05
         else:
@@ -168,11 +203,28 @@ class RedactionEnvironment(Environment):
 
         tp_bonus = 0.0
         fp_penalty = 0.0
+        duplicate_penalty = 0.0
+        annotation_bonus = 0.0
         calibration_penalty = 0.0
         explainability_bonus = 0.0
 
-        if action.action_type == ActionType.REDACT and action.start is not None and action.end is not None:
+        is_span_action = (
+            action.action_type in (ActionType.REDACT, ActionType.ANNOTATE)
+            and action.start is not None and action.end is not None
+        )
+
+        if is_span_action:
             span = (action.start, action.end)
+
+            # Escalating duplicate-action penalty
+            dup_count = sum(
+                1 for prev in self._recent_redact_spans
+                if self._iou(span, prev) > 0.8
+            )
+            if dup_count > 0:
+                duplicate_penalty = -0.2 * dup_count
+            self._recent_redact_spans.append(span)
+
             best_iou = (
                 max(self._iou(span, (gt.start, gt.end)) for gt in self.ground_truth)
                 if self.ground_truth
@@ -180,13 +232,19 @@ class RedactionEnvironment(Environment):
             )
 
             if best_iou > 0.6:
-                tp_bonus = 0.5 + 0.5 * best_iou
-                if any(self._iou(span, existing) > 0.8 for existing in self.redacted_spans[:-1]):
-                    tp_bonus = 0.1
+                tp_bonus = best_iou
             else:
-                fp_penalty = -0.5 * (1 - best_iou)
+                fp_penalty = -0.3
 
-            calibration_penalty = -0.2 * abs(action.confidence - best_iou)
+            calibration_penalty = -0.1 * abs(action.confidence - best_iou)
+
+            # ANNOTATE label-accuracy bonus: reward correct PII type classification
+            if action.action_type == ActionType.ANNOTATE and action.label and best_iou > 0.6:
+                gt_label = self._best_label(action.start, action.end)
+                if action.label == gt_label:
+                    annotation_bonus = 0.15  # correct label
+                else:
+                    annotation_bonus = -0.1  # wrong label on valid span
 
             if action.justification:
                 label = self._best_label(action.start, action.end)
@@ -202,34 +260,22 @@ class RedactionEnvironment(Environment):
                 if any(k in text for k in keyword_map.get(label, [])):
                     explainability_bonus = 0.1
 
+        finish_bonus = 0.0
+        if action.action_type == ActionType.FINISH:
+            running_f1 = self._compute_running_f1()
+            finish_bonus = min(0.7, 0.3 + (0.4 * running_f1))
+
         components["tp_bonus"] = round(tp_bonus, 4)
         components["fp_penalty"] = round(fp_penalty, 4)
+        components["duplicate_penalty"] = round(duplicate_penalty, 4)
+        components["annotation_bonus"] = round(annotation_bonus, 4)
         components["calibration_penalty"] = round(calibration_penalty, 4)
         components["explainability_bonus"] = round(explainability_bonus, 4)
+        components["finish_bonus"] = round(finish_bonus, 4)
 
-        fn_penalty = 0.0
-        utility_penalty = 0.0
-        if self.done:
-            missed = len(
-                [
-                    gt
-                    for gt in self.ground_truth
-                    if not any(
-                        self._iou((gt.start, gt.end), det) > 0.6
-                        for det in self.detected_spans
-                    )
-                ]
-            )
-            fn_penalty = -2.0 * missed
-
-            over_ratio = self.total_redacted_chars / len(self.current_doc["text"])
-            if over_ratio > 0.25:
-                utility_penalty = -3.0 * (over_ratio - 0.25)
-
-        components["fn_penalty"] = round(fn_penalty, 4)
-        components["utility_penalty"] = round(utility_penalty, 4)
-
-        total = round(sum(components.values()), 4)
+        raw_total = round(sum(components.values()), 4)
+        # Fix 2: Linear clamping instead of sigmoid for better discriminability
+        total = round(max(0.0, min(1.0, (raw_total + 1.0) / 2.0)), 4)
 
         matched_gt = 0
         for gt in self.ground_truth:
@@ -243,10 +289,19 @@ class RedactionEnvironment(Environment):
 
         return RedactionReward(
             total=total,
+            raw_total=raw_total,
             components=components,
             f1_score_current=self._compute_running_f1(),
             remaining_entities=remaining_entities,
         )
+
+    def _current_progress(self) -> float:
+        """Return fraction of document covered by current window end."""
+        if self.current_doc is None:
+            return 0.0
+        text_len = len(self.current_doc["text"])
+        window_end = min(text_len, self.cursor + self.window_size)
+        return window_end / text_len if text_len > 0 else 1.0
 
     def _build_observation(self) -> RedactionObservation:
         text = self.current_doc["text"]
@@ -259,6 +314,7 @@ class RedactionEnvironment(Environment):
             cursor_position=self.cursor,
             document_length=len(text),
             redacted_spans=list(self.redacted_spans),
+            annotations=list(self.annotations),
             progress_pct=1.0 if self.done else round(window_end / len(text), 4),
             previous_actions=list(self.previous_actions[-5:]),
             done=self.done,
@@ -275,7 +331,12 @@ class RedactionEnvironment(Environment):
 
             if covering:
                 cover_end = min(end, max(span[1] for span in covering))
-                parts.append("[REDACTED]")
+                span_len = cover_end - i
+                mask_str = "[REDACTED]"
+                if span_len <= len(mask_str):
+                    parts.append(mask_str[:span_len])
+                else:
+                    parts.append(mask_str.ljust(span_len, "█"))
                 i = cover_end
                 continue
 
@@ -323,8 +384,8 @@ class RedactionEnvironment(Environment):
             for idx, gt in enumerate(self.ground_truth):
                 if idx in matched_gt:
                     continue
-                if det.label != gt.label:
-                    continue
+                # Fix 5: Relaxed matching — IoU-only, no label requirement
+                # Prevents double-penalizing near-misses with auto-assigned labels
                 score = self._iou((det.start, det.end), (gt.start, gt.end))
                 if score > 0.6 and score > best_iou:
                     best_iou = score
@@ -353,7 +414,10 @@ class RedactionEnvironment(Environment):
     @staticmethod
     def _action_to_string(action: RedactionAction) -> str:
         if action.action_type == ActionType.REDACT:
-            return f"REDACT({action.start},{action.end})"
+            lbl = f",{action.label}" if action.label else ""
+            return f"REDACT({action.start},{action.end}{lbl})"
+        if action.action_type == ActionType.ANNOTATE:
+            return f"ANNOTATE({action.start},{action.end},{action.label})"
         if action.action_type == ActionType.PREV_CHUNK:
             return "PREV_CHUNK"
         return action.action_type.value

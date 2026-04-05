@@ -30,6 +30,13 @@ TASKS = ["gdpr_contract_easy", "hipaa_medical_medium", "security_logs_hard"]
 AUTH_BLOCK_REASON: Optional[str] = None
 BACKEND_BLOCK_REASON: Optional[str] = None
 
+PII_REGEX_PATTERNS = [
+    r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+    r"\b\d{3}[-.]\d{4}\b",
+    r"\b\d{3}[-.]\d{3}[-.]\d{4}\b",
+    r"\b\d{4}-\d{2}-\d{2}\b",
+]
+
 
 def _is_gemma4_nvidia_model() -> bool:
     return MODEL_NAME.strip().lower() == "google/gemma-4-31b-it"
@@ -45,7 +52,7 @@ def _chat_completion_kwargs(prompt: str, use_json_mode: bool) -> Dict[str, Any]:
     }
 
     if _is_gemma4_nvidia_model():
-        kwargs["max_tokens"] = int(os.getenv("MAX_TOKENS", "150"))
+        kwargs["max_tokens"] = int(os.getenv("MAX_TOKENS", "512"))
         kwargs["top_p"] = float(os.getenv("TOP_P", "0.95"))
         kwargs["temperature"] = float(os.getenv("TEMPERATURE", "0"))
         enable_thinking = os.getenv("ENABLE_THINKING", "0") in {"1", "true", "True"}
@@ -105,46 +112,116 @@ def log_end(success: bool, steps: int, rewards: List[float]) -> None:
 
 def _build_prompt(obs) -> str:
     return f"""
-You are a compliance analyst redacting PII under GDPR/HIPAA.
+You are a GDPR/HIPAA compliance analyst performing PII redaction on a document.
 
-Task: redact all personal identifiers (EMAIL, PHONE, SSN, NAME, ADDRESS, DOB)
-with precise absolute character indices in the full document.
+Task: identify and redact ALL personally identifiable information using precise
+absolute character indices. PII types: EMAIL, PHONE, SSN, NAME, ADDRESS, DOB.
 
-Current window ({obs.cursor_position}-{obs.cursor_position + len(obs.visible_text)}):
+IMPORTANT — Obfuscated PII patterns to watch for:
+- Emails: "john dot smith at gmail dot com", "j_doe at mail dot net"
+- Phones: "five five five-0199", "area code four-one-five then 555-0187"
+- SSNs: "three four five dash six seven dash eight nine zero one"
+- DOBs: "nineteen eighty-five march twelve", "oh-three slash fifteen slash seventy-eight"
+
+DO NOT REDACT: Company names (Apple, Google, Amazon, Microsoft, Samsung, Meta),
+product codes, project codenames (Falcon, Orion), infrastructure terms, or
+organizational references. Only redact personal identifiers.
+
+Current window (chars {obs.cursor_position}-{obs.cursor_position + len(obs.visible_text)}):
 ---
 {obs.visible_text}
 ---
-Already redacted: {obs.redacted_spans}
+Progress: {obs.progress_pct:.0%} | Already redacted: {obs.redacted_spans}
 Previous actions: {obs.previous_actions}
 
-Return strict JSON only, in one of these forms:
-{{"action": "REDACT", "start": 120, "end": 135}}
+Return strict JSON only, one of:
+{{"action": "ANNOTATE", "start": <abs_start>, "end": <abs_end>, "label": "<PII_TYPE>"}}
+{{"action": "REDACT", "start": <abs_start>, "end": <abs_end>}}
 {{"action": "NEXT_CHUNK"}}
+{{"action": "SKIP"}}
 {{"action": "FINISH"}}
 
 Rules:
-- Use absolute indices against full document text.
-- Prefer precision over broad spans.
-- If uncertain, use NEXT_CHUNK.
+- ANNOTATE: Preferred action! Redact one PII span AND label its type (EMAIL, PHONE, SSN, NAME, ADDRESS, DOB).
+- REDACT: mark one PII span using absolute offsets (without a label, less preferred but valid).
+  Formula: absolute_index = cursor_position + relative_offset_in_visible_text.
+- NEXT_CHUNK: advance to next unseen section. Use after all PII in current window is handled.
+- SKIP: no PII found in current window, equivalent to acknowledging and waiting.
+- FINISH: only when progress >= 95% AND no remaining PII to redact.
+- Do NOT re-redact spans that appear in already_redacted — move forward instead.
+- Prefer tight, precise spans over broad ones.
+- If uncertain whether something is PII, use NEXT_CHUNK for more context.
 """.strip()
 
 
 def _action_to_string(action: RedactionAction) -> str:
     if action.action_type == ActionType.REDACT:
         return f"REDACT({action.start},{action.end})"
+    if action.action_type == ActionType.ANNOTATE:
+        return f"ANNOTATE({action.start},{action.end},{action.label})"
     return action.action_type.value
 
 
-def _coerce_action(payload: Dict[str, Any]) -> Tuple[RedactionAction, Optional[str]]:
+def _coerce_action(payload: Dict[str, Any], obs) -> Tuple[RedactionAction, Optional[str]]:
     if "action_type" not in payload and "action" in payload:
         payload = {**payload, "action_type": payload["action"]}
     if "action_type" not in payload:
         return RedactionAction(action_type=ActionType.NEXT_CHUNK), "missing_action_type"
 
+    action_value = str(payload.get("action_type", "")).upper()
+    if action_value in (ActionType.REDACT.value, ActionType.ANNOTATE.value):
+        try:
+            raw_start = int(payload.get("start"))
+            raw_end = int(payload.get("end"))
+            snapped_start, snapped_end = _snap_redact_span(obs, raw_start, raw_end)
+            payload = {**payload, "start": snapped_start, "end": snapped_end}
+        except Exception:
+            pass
+
     try:
         return RedactionAction(**payload), None
     except Exception as exc:
         return RedactionAction(action_type=ActionType.NEXT_CHUNK), str(exc)
+
+
+def _snap_redact_span(obs, raw_start: int, raw_end: int) -> Tuple[int, int]:
+    text = obs.visible_text or ""
+    if not text:
+        return raw_start, raw_end
+
+    window_start = int(obs.cursor_position)
+    window_end = window_start + len(text)
+
+    rel_start = raw_start - window_start
+    rel_end = raw_end - window_start
+
+    scan_left = max(0, min(rel_start, rel_end) - 20)
+    scan_right = min(len(text), max(rel_start, rel_end) + 20)
+    if scan_right <= scan_left:
+        return raw_start, raw_end
+
+    scan_text = text[scan_left:scan_right]
+    start_candidates: List[int] = []
+    end_candidates: List[int] = []
+
+    for pattern in PII_REGEX_PATTERNS:
+        for match in re.finditer(pattern, scan_text, flags=re.IGNORECASE):
+            start_candidates.append(window_start + scan_left + match.start())
+            end_candidates.append(window_start + scan_left + match.end())
+
+    snapped_start = raw_start
+    snapped_end = raw_end
+
+    if start_candidates:
+        snapped_start = min(start_candidates, key=lambda candidate: abs(candidate - raw_start))
+    if end_candidates:
+        snapped_end = min(end_candidates, key=lambda candidate: abs(candidate - raw_end))
+
+    # Keep span sane and inside the document bounds.
+    snapped_start = max(0, min(snapped_start, window_end - 1))
+    snapped_end = max(snapped_start + 1, min(snapped_end, window_end))
+
+    return snapped_start, snapped_end
 
 
 def _extract_json_object(text: str) -> Optional[str]:
@@ -201,14 +278,7 @@ def _first_match(pattern: str, text: str) -> Optional[Tuple[int, int]]:
 
 def _fallback_action(obs) -> RedactionAction:
     # Deterministic local policy used when provider auth/config is invalid.
-    patterns = [
-        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
-        r"\b\d{3}[-.]\d{4}\b",
-        r"\b\d{3}[-.]\d{3}[-.]\d{4}\b",
-        r"\b\d{4}-\d{2}-\d{2}\b",
-    ]
-
-    for pattern in patterns:
+    for pattern in PII_REGEX_PATTERNS:
         rel_span = _first_match(pattern, obs.visible_text)
         if rel_span is not None:
             start = obs.cursor_position + rel_span[0]
@@ -237,7 +307,7 @@ def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
         payload, parse_error = _parse_action_payload(text)
         if payload is None:
             return _fallback_action(obs), parse_error
-        return _coerce_action(payload)
+        return _coerce_action(payload, obs)
     except Exception as exc:
         msg = str(exc)
         if _is_auth_error(msg):
@@ -254,7 +324,7 @@ def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
                 payload, parse_error = _parse_action_payload(text)
                 if payload is None:
                     return _fallback_action(obs), parse_error
-                return _coerce_action(payload)
+                return _coerce_action(payload, obs)
             except Exception as retry_exc:
                 retry_msg = str(retry_exc)
                 if _is_auth_error(retry_msg):

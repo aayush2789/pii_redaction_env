@@ -3,120 +3,93 @@
     "id": "easy_doc_001",
     "text": "Master Services Agreement. Vendor support contact is john.doe@email.com. For urgent incidents call 555-0123 and mail signed notices to 77 Market Street, Floor 2, Redwood City. Project code references may appear in tickets but must remain visible for audit traceability.",
     "entities": [
-      {
-        "label": "EMAIL",
-        "start": 53,
-        "end": 71,
-        "text": "john.doe@email.com"
-      },
-      {
-        "label": "PHONE",
-        "start": 99,
-        "end": 107,
-        "text": "555-0123"
-      },
-      {
-        "label": "ADDRESS",
-        "start": 135,
-        "end": 151,
-        "text": "77 Market Street"
-      }
+      {"label": "EMAIL", "start": 53, "end": 71, "text": "john.doe@email.com"},
+      {"label": "PHONE", "start": 99, "end": 107, "text": "555-0123"},
+      {"label": "ADDRESS", "start": 135, "end": 151, "text": "77 Market Street"}
     ]
   },
   {
     "id": "easy_doc_002",
     "text": "Employment onboarding checklist for contractor Jane Roe. Primary residence listed as 12 Pine Avenue. Benefits enrollment questions can be sent to jane.roe@corp.com. Keep role title, department, and payroll cycle details unredacted for operations reconciliation.",
     "entities": [
-      {
-        "label": "NAME",
-        "start": 47,
-        "end": 55,
-        "text": "Jane Roe"
-      },
-      {
-        "label": "ADDRESS",
-        "start": 85,
-        "end": 99,
-        "text": "12 Pine Avenue"
-      },
-      {
-        "label": "EMAIL",
-        "start": 146,
-        "end": 163,
-        "text": "jane.roe@corp.com"
-      }
+      {"label": "NAME", "start": 47, "end": 55, "text": "Jane Roe"},
+      {"label": "ADDRESS", "start": 85, "end": 99, "text": "12 Pine Avenue"},
+      {"label": "EMAIL", "start": 146, "end": 163, "text": "jane.roe@corp.com"}
     ]
   },
   {
     "id": "easy_doc_003",
     "text": "Renewal amendment executed with customer success manager Michael Trent. Contact number on file: 415-555-0192. Invoice remittance address remains 204 Harbor Lane, Suite 8. Internal SLA terms and product SKUs are not personal data and should be preserved.",
     "entities": [
-      {
-        "label": "NAME",
-        "start": 57,
-        "end": 70,
-        "text": "Michael Trent"
-      },
-      {
-        "label": "PHONE",
-        "start": 96,
-        "end": 108,
-        "text": "415-555-0192"
-      },
-      {
-        "label": "ADDRESS",
-        "start": 145,
-        "end": 160,
-        "text": "204 Harbor Lane"
-      }
+      {"label": "NAME", "start": 57, "end": 70, "text": "Michael Trent"},
+      {"label": "PHONE", "start": 96, "end": 108, "text": "415-555-0192"},
+      {"label": "ADDRESS", "start": 145, "end": 160, "text": "204 Harbor Lane"}
     ]
   },
   {
     "id": "easy_doc_004",
     "text": "Client transition memo: account owner Laura Kim confirmed new support alias laura.kim@vendor.io. Backup callback line is 650-555-2233. Meeting cadence and contract value should remain visible for reporting.",
     "entities": [
-      {
-        "label": "NAME",
-        "start": 38,
-        "end": 47,
-        "text": "Laura Kim"
-      },
-      {
-        "label": "EMAIL",
-        "start": 76,
-        "end": 95,
-        "text": "laura.kim@vendor.io"
-      },
-      {
-        "label": "PHONE",
-        "start": 121,
-        "end": 133,
-        "text": "650-555-2233"
-      }
+      {"label": "NAME", "start": 38, "end": 47, "text": "Laura Kim"},
+      {"label": "EMAIL", "start": 76, "end": 95, "text": "laura.kim@vendor.io"},
+      {"label": "PHONE", "start": 121, "end": 133, "text": "650-555-2233"}
     ]
   },
   {
     "id": "easy_doc_005",
     "text": "Facilities notice submitted by Peter Watts. Building access card will be mailed to 99 Elm Drive and confirmation sent via peter.watts@office.net. Badge ID and floor assignment are operational metadata and must remain intact.",
     "entities": [
-      {
-        "label": "NAME",
-        "start": 31,
-        "end": 42,
-        "text": "Peter Watts"
-      },
-      {
-        "label": "ADDRESS",
-        "start": 83,
-        "end": 95,
-        "text": "99 Elm Drive"
-      },
-      {
-        "label": "EMAIL",
-        "start": 122,
-        "end": 144,
-        "text": "peter.watts@office.net"
-      }
+      {"label": "NAME", "start": 31, "end": 42, "text": "Peter Watts"},
+      {"label": "ADDRESS", "start": 83, "end": 95, "text": "99 Elm Drive"},
+      {"label": "EMAIL", "start": 122, "end": 144, "text": "peter.watts@office.net"}
+    ]
+  },
+  {
+    "id": "easy_doc_006",
+    "text": "Payroll verification form for Daniel Park, SSN 543-21-6789. Direct deposit routing and account data are handled separately. Confirmed mailing address 801 Cedar Blvd for tax documentation purposes.",
+    "entities": [
+      {"label": "NAME", "start": 31, "end": 42, "text": "Daniel Park"},
+      {"label": "SSN", "start": 48, "end": 59, "text": "543-21-6789"},
+      {"label": "ADDRESS", "start": 152, "end": 165, "text": "801 Cedar Blvd"}
+    ]
+  },
+  {
+    "id": "easy_doc_007",
+    "text": "Insurance enrollment packet lists member Rachel Green born 1990-07-14. Contact email rachel.green@insure.com and phone 312-555-7890. Group plan number and employer ID are non-PII fields.",
+    "entities": [
+      {"label": "NAME", "start": 41, "end": 53, "text": "Rachel Green"},
+      {"label": "DOB", "start": 59, "end": 69, "text": "1990-07-14"},
+      {"label": "EMAIL", "start": 85, "end": 109, "text": "rachel.green@insure.com"},
+      {"label": "PHONE", "start": 120, "end": 132, "text": "312-555-7890"}
+    ]
+  },
+  {
+    "id": "easy_doc_008",
+    "text": "Vendor compliance audit record for contractor Maria Santos, SSN 234-56-7891. Office located at 510 Birch Road. Communications via maria.santos@partner.org. Audit trail timestamps are operational data.",
+    "entities": [
+      {"label": "NAME", "start": 43, "end": 55, "text": "Maria Santos"},
+      {"label": "SSN", "start": 61, "end": 72, "text": "234-56-7891"},
+      {"label": "ADDRESS", "start": 95, "end": 108, "text": "510 Birch Road"},
+      {"label": "EMAIL", "start": 128, "end": 153, "text": "maria.santos@partner.org"}
+    ]
+  },
+  {
+    "id": "easy_doc_009",
+    "text": "Lease agreement between landlord entity and tenant Kevin Liu. Tenant date of birth 1988-03-22. Emergency contact reachable at 718-555-4401. Lease terms and renewal clauses are standard contractual language.",
+    "entities": [
+      {"label": "NAME", "start": 51, "end": 60, "text": "Kevin Liu"},
+      {"label": "DOB", "start": 83, "end": 93, "text": "1988-03-22"},
+      {"label": "PHONE", "start": 126, "end": 138, "text": "718-555-4401"}
+    ]
+  },
+  {
+    "id": "easy_doc_010",
+    "text": "Background check consent form signed by Alicia Nguyen at 222 Maple Court. Applicant provides SSN 111-22-3344 and email alicia.nguyen@apply.net for correspondence. Position title and department codes are non-sensitive.",
+    "entities": [
+      {"label": "NAME", "start": 40, "end": 53, "text": "Alicia Nguyen"},
+      {"label": "ADDRESS", "start": 57, "end": 72, "text": "222 Maple Court"},
+      {"label": "SSN", "start": 97, "end": 108, "text": "111-22-3344"},
+      {"label": "EMAIL", "start": 119, "end": 143, "text": "alicia.nguyen@apply.net"}
     ]
   }
 ]

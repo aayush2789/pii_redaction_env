@@ -1,128 +1,97 @@
 [
   {
     "id": "medium_doc_001",
-    "text": "Discharge summary: Patient Mary Johnson presented with chest discomfort after activity. Recorded DOB 1985-04-12. Outpatient follow-up was coordinated using phone 212-555-9087.  Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers.",
+    "text": "Discharge summary: Patient Mary Johnson presented with chest discomfort after activity. Recorded DOB 1985-04-12. Outpatient follow-up was coordinated using phone 212-555-9087. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers.",
     "entities": [
-      {
-        "label": "NAME",
-        "start": 27,
-        "end": 39,
-        "text": "Mary Johnson"
-      },
-      {
-        "label": "DOB",
-        "start": 101,
-        "end": 111,
-        "text": "1985-04-12"
-      },
-      {
-        "label": "PHONE",
-        "start": 162,
-        "end": 174,
-        "text": "212-555-9087"
-      }
+      {"label": "NAME", "start": 27, "end": 39, "text": "Mary Johnson"},
+      {"label": "DOB", "start": 101, "end": 111, "text": "1985-04-12"},
+      {"label": "PHONE", "start": 162, "end": 174, "text": "212-555-9087"}
     ]
   },
   {
     "id": "medium_doc_002",
-    "text": "Emergency department transfer record for Robert King. The chart lists DOB 1979-11-03 and residential location 45 Cedar Road.  Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers.",
+    "text": "Emergency department transfer record for Robert King. The chart lists DOB 1979-11-03 and residential location 45 Cedar Road. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers.",
     "entities": [
-      {
-        "label": "NAME",
-        "start": 41,
-        "end": 52,
-        "text": "Robert King"
-      },
-      {
-        "label": "DOB",
-        "start": 74,
-        "end": 84,
-        "text": "1979-11-03"
-      },
-      {
-        "label": "ADDRESS",
-        "start": 110,
-        "end": 123,
-        "text": "45 Cedar Road"
-      }
+      {"label": "NAME", "start": 41, "end": 52, "text": "Robert King"},
+      {"label": "DOB", "start": 74, "end": 84, "text": "1979-11-03"},
+      {"label": "ADDRESS", "start": 110, "end": 123, "text": "45 Cedar Road"}
     ]
   },
   {
     "id": "medium_doc_003",
-    "text": "Outpatient oncology follow-up for Denise Alvarez. Staff confirmed date of birth as 1968-09-21 and callback number 718-555-4410.  Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers.",
+    "text": "Outpatient oncology follow-up for Denise Alvarez. Staff confirmed date of birth as 1968-09-21 and callback number 718-555-4410. Additional clinical context includes medication adherence notes, prior authorization routing, and handoff summaries that are non-PII. The care team reviewed lab values, imaging orders, and medication reconciliation results.",
     "entities": [
-      {
-        "label": "NAME",
-        "start": 34,
-        "end": 48,
-        "text": "Denise Alvarez"
-      },
-      {
-        "label": "DOB",
-        "start": 83,
-        "end": 93,
-        "text": "1968-09-21"
-      },
-      {
-        "label": "PHONE",
-        "start": 114,
-        "end": 126,
-        "text": "718-555-4410"
-      }
+      {"label": "NAME", "start": 34, "end": 48, "text": "Denise Alvarez"},
+      {"label": "DOB", "start": 83, "end": 93, "text": "1968-09-21"},
+      {"label": "PHONE", "start": 114, "end": 126, "text": "718-555-4410"}
     ]
   },
   {
     "id": "medium_doc_004",
-    "text": "Rehabilitation intake note indicates patient Samuel Brooks resides at 330 Walnut Terrace and supplied alternate contact samuel.brooks@mail.org.  Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers.",
+    "text": "Rehabilitation intake note indicates patient Samuel Brooks resides at 330 Walnut Terrace and supplied alternate contact samuel.brooks@mail.org. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible for audit.",
     "entities": [
-      {
-        "label": "NAME",
-        "start": 45,
-        "end": 58,
-        "text": "Samuel Brooks"
-      },
-      {
-        "label": "ADDRESS",
-        "start": 70,
-        "end": 88,
-        "text": "330 Walnut Terrace"
-      },
-      {
-        "label": "EMAIL",
-        "start": 120,
-        "end": 142,
-        "text": "samuel.brooks@mail.org"
-      }
+      {"label": "NAME", "start": 45, "end": 58, "text": "Samuel Brooks"},
+      {"label": "ADDRESS", "start": 70, "end": 88, "text": "330 Walnut Terrace"},
+      {"label": "EMAIL", "start": 120, "end": 142, "text": "samuel.brooks@mail.org"}
     ]
   },
   {
     "id": "medium_doc_005",
-    "text": "Neurology consult addendum for Priya Natarajan. Documentation includes DOB 1991-02-17, home line 646-555-7734, and correspondence email priya.n@healthmail.com.  Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers. Additional clinical context includes medication adherence notes, prior authorization routing, coding references, and handoff summaries that are non-PII. These details must remain visible so downstream teams can audit care decisions and operational throughput without exposing personal identifiers.",
+    "text": "Neurology consult addendum for Priya Natarajan. Documentation includes DOB 1991-02-17, home line 646-555-7734, and correspondence email priya.n@healthmail.com. Additional clinical context includes medication adherence notes, prior authorization routing, and handoff summaries.",
     "entities": [
-      {
-        "label": "NAME",
-        "start": 31,
-        "end": 46,
-        "text": "Priya Natarajan"
-      },
-      {
-        "label": "DOB",
-        "start": 75,
-        "end": 85,
-        "text": "1991-02-17"
-      },
-      {
-        "label": "PHONE",
-        "start": 97,
-        "end": 109,
-        "text": "646-555-7734"
-      },
-      {
-        "label": "EMAIL",
-        "start": 136,
-        "end": 158,
-        "text": "priya.n@healthmail.com"
-      }
+      {"label": "NAME", "start": 31, "end": 46, "text": "Priya Natarajan"},
+      {"label": "DOB", "start": 75, "end": 85, "text": "1991-02-17"},
+      {"label": "PHONE", "start": 97, "end": 109, "text": "646-555-7734"},
+      {"label": "EMAIL", "start": 136, "end": 158, "text": "priya.n@healthmail.com"}
+    ]
+  },
+  {
+    "id": "medium_doc_006",
+    "text": "Psychiatric evaluation notes for patient Angela Torres, DOB 1975-06-30. SSN on intake form listed as 321-54-9876. Emergency contact phone is 510-555-3321. Billing codes and diagnostic impressions are clinical metadata and must remain in record.",
+    "entities": [
+      {"label": "NAME", "start": 41, "end": 54, "text": "Angela Torres"},
+      {"label": "DOB", "start": 60, "end": 70, "text": "1975-06-30"},
+      {"label": "SSN", "start": 101, "end": 112, "text": "321-54-9876"},
+      {"label": "PHONE", "start": 141, "end": 153, "text": "510-555-3321"}
+    ]
+  },
+  {
+    "id": "medium_doc_007",
+    "text": "Cardiology referral letter regarding James Whitfield at 90 Birchwood Lane. Patient email james.whitfield@cardiac.org used for portal access. Referring physician and facility codes are operational. Treatment history and prior authorization statuses are non-PII.",
+    "entities": [
+      {"label": "NAME", "start": 37, "end": 52, "text": "James Whitfield"},
+      {"label": "ADDRESS", "start": 56, "end": 73, "text": "90 Birchwood Lane"},
+      {"label": "EMAIL", "start": 89, "end": 117, "text": "james.whitfield@cardiac.org"}
+    ]
+  },
+  {
+    "id": "medium_doc_008",
+    "text": "Pediatric wellness visit for Sofia Delgado, born 2015-11-08. Parent contact is 415-555-6678. Residence at 77 Spruce Avenue for home health coordination. Growth charts and immunization records are clinical data not subject to redaction.",
+    "entities": [
+      {"label": "NAME", "start": 29, "end": 42, "text": "Sofia Delgado"},
+      {"label": "DOB", "start": 49, "end": 59, "text": "2015-11-08"},
+      {"label": "PHONE", "start": 79, "end": 91, "text": "415-555-6678"},
+      {"label": "ADDRESS", "start": 106, "end": 122, "text": "77 Spruce Avenue"}
+    ]
+  },
+  {
+    "id": "medium_doc_009",
+    "text": "Pre-surgical clearance for Thomas Grant, SSN 456-78-1234. Anesthesia team verified DOB 1962-01-19 and callback 303-555-2210. Surgical site, procedure codes, and operating room assignments are non-PII.",
+    "entities": [
+      {"label": "NAME", "start": 27, "end": 39, "text": "Thomas Grant"},
+      {"label": "SSN", "start": 45, "end": 56, "text": "456-78-1234"},
+      {"label": "DOB", "start": 87, "end": 97, "text": "1962-01-19"},
+      {"label": "PHONE", "start": 111, "end": 123, "text": "303-555-2210"}
+    ]
+  },
+  {
+    "id": "medium_doc_010",
+    "text": "Occupational therapy progress note for Linda Park. Patient reached via linda.park@rehab.net and phone 917-555-0042. Home address 155 Oak Terrace used for equipment delivery. Session notes and functional assessments are clinical records.",
+    "entities": [
+      {"label": "NAME", "start": 42, "end": 51, "text": "Linda Park"},
+      {"label": "EMAIL", "start": 72, "end": 92, "text": "linda.park@rehab.net"},
+      {"label": "PHONE", "start": 103, "end": 115, "text": "917-555-0042"},
+      {"label": "ADDRESS", "start": 130, "end": 145, "text": "155 Oak Terrace"}
     ]
   }
 ]
