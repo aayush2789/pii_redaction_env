@@ -1,179 +1,255 @@
-# PII Redaction Assistant OpenEnv
+---
+title: Pii Redaction Env Environment Server
+emoji: 🥈
+colorFrom: gray
+colorTo: yellow
+sdk: docker
+pinned: false
+app_port: 8000
+base_path: /web
+tags:
+  - openenv
+---
 
-A complete OpenEnv-compliant environment for training and evaluating agents that redact personally identifiable information (PII) in realistic GDPR/HIPAA document workflows.
+# Pii Redaction Env Environment
 
-## Motivation
+A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.
 
-Automated PII redaction is a high-impact compliance need:
-- GDPR violations can incur fines up to 4% of global annual revenue.
-- HIPAA violations can trigger major penalties, legal exposure, and mandatory breach notifications.
-- Real review pipelines require sequential decisions with limited context windows, not one-shot extraction.
+## Quick Start
 
-This environment simulates that real process: agents inspect a sliding window, redact spans, advance through the document, and trade off recall versus over-redaction utility.
+The simplest way to use the Pii Redaction Env environment is through the `PiiRedactionEnv` class:
 
-## Environment Design
+```python
+from pii_redaction_env import PiiRedactionAction, PiiRedactionEnv
 
-### Observation Space
-`RedactionObservation` includes:
-- `visible_text`: Sliding text window (`window_size`, default 500 chars)
-- `cursor_position`: Absolute offset in full document
-- `document_length`: Total characters
-- `redacted_spans`: All absolute redaction spans so far
-- `progress_pct`: Fraction of current document window covered
-- `previous_actions`: Last 5 actions for policy context
-- `done`: Episode completion flag
+try:
+    # Create environment from Docker image
+    pii_redaction_envenv = PiiRedactionEnv.from_docker_image("pii_redaction_env-env:latest")
 
-Redacted regions are masked in subsequent windows as `[REDACTED]`.
+    # Reset
+    result = pii_redaction_envenv.reset()
+    print(f"Reset: {result.observation.echoed_message}")
 
-### Action Space
-`RedactionAction` supports:
-- `REDACT(start, end)`: redact absolute char span
-- `NEXT_CHUNK()`: advance cursor by 50% overlap (`window_size / 2`)
-- `SKIP()`: no-op action
-- `FINISH()`: terminate episode
+    # Send multiple messages
+    messages = ["Hello, World!", "Testing echo", "Final message"]
 
-Examples:
-- `{"action_type": "REDACT", "start": 120, "end": 136}`
-- `{"action_type": "NEXT_CHUNK"}`
-- `{"action_type": "FINISH"}`
+    for msg in messages:
+        result = pii_redaction_envenv.step(PiiRedactionAction(message=msg))
+        print(f"Sent: '{msg}'")
+        print(f"  → Echoed: '{result.observation.echoed_message}'")
+        print(f"  → Length: {result.observation.message_length}")
+        print(f"  → Reward: {result.reward}")
 
-### Reward Function
-Dense reward balances compliance and utility:
-- Immediate feedback:
-- `progress_bonus = +0.1` on `NEXT_CHUNK`
-- True-positive redaction bonus scaled by IOU if `IOU > 0.6`
-- False-positive penalty `-0.5`
-- End-of-episode penalties:
-- Missed entities: `-2.0 * missed`
-- Utility penalty if over-redaction ratio exceeds 25%
+finally:
+    # Always clean up
+    pii_redaction_envenv.close()
+```
 
-Final task score combines quality and usefulness:
-- `Final Score = 0.7 * F1 + 0.3 * utility_score`
-- Utility decreases when too much text is redacted.
+That's it! The `PiiRedactionEnv.from_docker_image()` method handles:
+- Starting the Docker container
+- Waiting for the server to be ready
+- Connecting to the environment
+- Container cleanup when you call `close()`
 
-## Tasks
+## Building the Docker Image
 
-### Easy: `gdpr_contract_easy`
-Pattern-heavy synthetic contracts with obvious emails, phones, addresses.
-- Regex-based approaches can perform well.
-- Objective: redact obvious PII with high precision and minimal over-redaction.
-- Success threshold: 0.90
+Before using the environment, you need to build the Docker image:
 
-### Medium: `hipaa_medical_medium`
-Medical-style notes with contextual entities (names, DOB, phone/address references).
-- Requires context-aware extraction.
-- Objective: identify contextual patient identifiers and redact them without removing clinical text.
-- Success threshold: 0.85
+```bash
+# From project root
+docker build -t pii_redaction_env-env:latest -f server/Dockerfile .
+```
 
-### Hard: `security_logs_hard`
-Adversarial support logs with obfuscation and ambiguity.
-- Example: `john dot smith at gmail dot com`
-- Ambiguous references and nested mentions.
-- Objective: catch obfuscated PII while avoiding false positives on company names and ordinary references.
-- Success threshold: 0.75
+## Deploying to Hugging Face Spaces
 
-Each task uses a deterministic grader with a normalized score in the inclusive range $[0, 1]$.
-The final score is a weighted blend of exactness and utility, so an agent must balance recall against over-redaction.
+You can easily deploy your OpenEnv environment to Hugging Face Spaces using the `openenv push` command:
+
+```bash
+# From the environment directory (where openenv.yaml is located)
+openenv push
+
+# Or specify options
+openenv push --namespace my-org --private
+```
+
+The `openenv push` command will:
+1. Validate that the directory is an OpenEnv environment (checks for `openenv.yaml`)
+2. Prepare a custom build for Hugging Face Docker space (enables web interface)
+3. Upload to Hugging Face (ensuring you're logged in)
+
+### Prerequisites
+
+- Authenticate with Hugging Face: The command will prompt for login if not already authenticated
+
+### Options
+
+- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
+- `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
+- `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
+- `--private`: Deploy the space as private (default: public)
+
+### Examples
+
+```bash
+# Push to your personal namespace (defaults to username/env-name from openenv.yaml)
+openenv push
+
+# Push to a specific repository
+openenv push --repo-id my-org/my-env
+
+# Push with a custom base image
+openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
+
+# Push as a private space
+openenv push --private
+
+# Combine options
+openenv push --repo-id my-org/my-env --base-image custom-base:latest --private
+```
+
+After deployment, your space will be available at:
+`https://huggingface.co/spaces/<repo-id>`
+
+The deployed space includes:
+- **Web Interface** at `/web` - Interactive UI for exploring the environment
+- **API Documentation** at `/docs` - Full OpenAPI/Swagger interface
+- **Health Check** at `/health` - Container health monitoring
+- **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
+
+## Environment Details
+
+### Action
+**PiiRedactionAction**: Contains a single field
+- `message` (str) - The message to echo back
+
+### Observation
+**PiiRedactionObservation**: Contains the echo response and metadata
+- `echoed_message` (str) - The message echoed back
+- `message_length` (int) - Length of the message
+- `reward` (float) - Reward based on message length (length × 0.1)
+- `done` (bool) - Always False for echo environment
+- `metadata` (dict) - Additional info like step count
+
+### Reward
+The reward is calculated as: `message_length × 0.1`
+- "Hi" → reward: 0.2
+- "Hello, World!" → reward: 1.3
+- Empty message → reward: 0.0
+
+## Advanced Usage
+
+### Connecting to an Existing Server
+
+If you already have a Pii Redaction Env environment server running, you can connect directly:
+
+```python
+from pii_redaction_env import PiiRedactionEnv
+
+# Connect to existing server
+pii_redaction_envenv = PiiRedactionEnv(base_url="<ENV_HTTP_URL_HERE>")
+
+# Use as normal
+result = pii_redaction_envenv.reset()
+result = pii_redaction_envenv.step(PiiRedactionAction(message="Hello!"))
+```
+
+Note: When connecting to an existing server, `pii_redaction_envenv.close()` will NOT stop the server.
+
+### Using the Context Manager
+
+The client supports context manager usage for automatic connection management:
+
+```python
+from pii_redaction_env import PiiRedactionAction, PiiRedactionEnv
+
+# Connect with context manager (auto-connects and closes)
+with PiiRedactionEnv(base_url="http://localhost:8000") as env:
+    result = env.reset()
+    print(f"Reset: {result.observation.echoed_message}")
+    # Multiple steps with low latency
+    for msg in ["Hello", "World", "!"]:
+        result = env.step(PiiRedactionAction(message=msg))
+        print(f"Echoed: {result.observation.echoed_message}")
+```
+
+The client uses WebSocket connections for:
+- **Lower latency**: No HTTP connection overhead per request
+- **Persistent session**: Server maintains your environment state
+- **Efficient for episodes**: Better for many sequential steps
+
+### Concurrent WebSocket Sessions
+
+The server supports multiple concurrent WebSocket connections. To enable this,
+modify `server/app.py` to use factory mode:
+
+```python
+# In server/app.py - use factory mode for concurrent sessions
+app = create_app(
+    PiiRedactionEnvironment,  # Pass class, not instance
+    PiiRedactionAction,
+    PiiRedactionObservation,
+    max_concurrent_envs=4,  # Allow 4 concurrent sessions
+)
+```
+
+Then multiple clients can connect simultaneously:
+
+```python
+from pii_redaction_env import PiiRedactionAction, PiiRedactionEnv
+from concurrent.futures import ThreadPoolExecutor
+
+def run_episode(client_id: int):
+    with PiiRedactionEnv(base_url="http://localhost:8000") as env:
+        result = env.reset()
+        for i in range(10):
+            result = env.step(PiiRedactionAction(message=f"Client {client_id}, step {i}"))
+        return client_id, result.observation.message_length
+
+# Run 4 episodes concurrently
+with ThreadPoolExecutor(max_workers=4) as executor:
+    results = list(executor.map(run_episode, range(4)))
+```
+
+## Development & Testing
+
+### Direct Environment Testing
+
+Test the environment logic directly without starting the HTTP server:
+
+```bash
+# From the server directory
+python3 server/pii_redaction_env_environment.py
+```
+
+This verifies that:
+- Environment resets correctly
+- Step executes actions properly
+- State tracking works
+- Rewards are calculated correctly
+
+### Running Locally
+
+Run the server locally for development:
+
+```bash
+uvicorn server.app:app --reload
+```
 
 ## Project Structure
 
-```text
-pii-redaction-env/
-├── openenv.yaml
-├── README.md
-├── Dockerfile
-├── requirements.txt
-├── src/
-│   ├── __init__.py
-│   ├── models.py
-│   ├── environment.py
-│   ├── tasks.py
-│   ├── graders.py
-│   └── data/
-│       ├── __init__.py
-│       ├── easy_docs.json
-│       ├── medium_docs.json
-│       └── hard_docs.json
-├── scripts/
-│   └── baseline.py
-└── tests/
-    ├── test_env.py
-    └── test_graders.py
 ```
-
-## Setup
-
-1. Activate your virtual environment.
-2. Install dependencies:
-
-```bash
-pip install -r requirements.txt
+pii_redaction_env/
+├── .dockerignore         # Docker build exclusions
+├── __init__.py            # Module exports
+├── README.md              # This file
+├── openenv.yaml           # OpenEnv manifest
+├── pyproject.toml         # Project metadata and dependencies
+├── uv.lock                # Locked dependencies (generated)
+├── client.py              # PiiRedactionEnv client
+├── models.py              # Action and Observation models
+└── server/
+    ├── __init__.py        # Server module exports
+    ├── pii_redaction_env_environment.py  # Core environment logic
+    ├── app.py             # FastAPI application (HTTP + WebSocket endpoints)
+    └── Dockerfile         # Container image definition
 ```
-
-3. Set API key for baseline:
-
-```bash
-set OPENAI_API_KEY=your_key_here
-```
-
-## Usage
-
-Run baseline across all tasks:
-
-```bash
-python scripts/baseline.py
-```
-
-Programmatic usage:
-
-```python
-from src.environment import RedactionEnvironment
-from src.models import RedactionAction, ActionType
-
-env = RedactionEnvironment(task_id="gdpr_contract_easy")
-obs = env.reset()
-
-obs, reward, done, info = env.step(
-    RedactionAction(action_type=ActionType.NEXT_CHUNK)
-)
-
-if not done:
-    obs, reward, done, info = env.step(
-        RedactionAction(action_type=ActionType.FINISH)
-    )
-
-grade = env.grade()
-print(grade.dict())
-```
-
-## Baseline Expectations (GPT-4o-mini)
-
-Expected approximate outcomes:
-- Easy: ~0.92
-- Medium: ~0.78
-- Hard: ~0.65
-
-These are directional benchmarks and may vary by model version and prompt strategy.
-
-## Testing
-
-Run all tests:
-
-```bash
-pytest tests/ -v
-```
-
-Included tests validate:
-- Observation reset integrity
-- Masking behavior after redaction
-- Cursor movement for overlapping windows
-- Invalid redaction penalties
-- Grade/F1 correctness
-- Episode termination on finish and max steps
-
-## OpenEnv Metadata
-
-Environment metadata is defined in `openenv.yaml` with:
-- Entrypoint: `src.environment:RedactionEnvironment`
-- Typed observation/action models from `src.models`
-- Task list and reward range for evaluator integrations

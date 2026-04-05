@@ -1,26 +1,7 @@
-name: pii-redaction-env
-version: 1.0.0
-description: GDPR/HIPAA compliance environment for PII redaction in unstructured text
-author: Your Name
-tags: [compliance, privacy, nlp, real-world]
+spec_version: 1
+name: pii_redaction_env
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
 
-entrypoint: src.environment:RedactionEnvironment
-
-observation_space:
-  type: RedactionObservation
-  schema: src.models:RedactionObservation
-
-action_space:
-  type: RedactionAction
-  schema: src.models:RedactionAction
-
-reward_range: [-10.0, 5.0]
-
-tasks:
-  - gdpr_contract_easy
-  - hipaa_medical_medium
-  - security_logs_hard
-
-docker:
-  port: 7860
-  cmd: python -m server.app

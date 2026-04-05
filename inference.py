@@ -10,8 +10,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
-from src.environment import RedactionEnvironment
-from src.models import ActionType, RedactionAction
+try:
+    from .server.pii_redaction_env_environment import RedactionEnvironment
+    from .models import ActionType, RedactionAction
+except ImportError:
+    from server.pii_redaction_env_environment import RedactionEnvironment
+    from models import ActionType, RedactionAction
 from dotenv import load_dotenv
 load_dotenv()
 

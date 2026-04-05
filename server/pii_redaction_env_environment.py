@@ -7,14 +7,24 @@ from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
 
 from .graders import compute_grade
-from .models import (
-    ActionType,
-    PIIEntity,
-    RedactionAction,
-    RedactionObservation,
-    RedactionReward,
-    TaskGrade,
-)
+try:
+    from ..models import (
+        ActionType,
+        PIIEntity,
+        RedactionAction,
+        RedactionObservation,
+        RedactionReward,
+        TaskGrade,
+    )
+except ImportError:
+    from models import (
+        ActionType,
+        PIIEntity,
+        RedactionAction,
+        RedactionObservation,
+        RedactionReward,
+        TaskGrade,
+    )
 from .tasks import TASKS, get_task, load_documents
 
 

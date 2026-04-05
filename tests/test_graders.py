@@ -1,6 +1,6 @@
-from src.graders import compute_grade
-from src.models import PIIEntity
-from src.tasks import TASKS
+from server.graders import compute_grade
+from models import PIIEntity
+from server.tasks import TASKS
 
 
 def test_compute_grade_matches_expected_f1():

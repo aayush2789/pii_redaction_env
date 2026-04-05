@@ -1,6 +1,9 @@
 from typing import Dict, List, Tuple
 
-from .models import PIIEntity, TaskGrade
+try:
+    from ..models import PIIEntity, TaskGrade
+except ImportError:
+    from models import PIIEntity, TaskGrade
 
 
 def _iou(span_a: Tuple[int, int], span_b: Tuple[int, int]) -> float:

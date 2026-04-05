@@ -1,4 +1,4 @@
-from src.models import ActionType, RedactionAction
+from models import ActionType, RedactionAction
 
 
 def test_prev_chunk_action_validates_without_span():

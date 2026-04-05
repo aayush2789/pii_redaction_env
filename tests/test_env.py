@@ -1,5 +1,5 @@
-from src.environment import RedactionEnvironment
-from src.models import ActionType, RedactionAction
+from server.pii_redaction_env_environment import RedactionEnvironment
+from models import ActionType, RedactionAction
 
 
 def test_reset_returns_valid_observation():
@@ -241,7 +241,7 @@ def test_all_entity_types_present():
     import json
     from pathlib import Path
 
-    data_dir = Path(__file__).resolve().parents[1] / "src" / "data"
+    data_dir = Path(__file__).resolve().parents[1] / "server" / "data"
     all_labels = set()
     for json_file in data_dir.glob("*.json"):
         with open(json_file) as f:
