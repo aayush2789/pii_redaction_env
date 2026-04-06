@@ -17,6 +17,7 @@ except ImportError:
     from server.pii_redaction_env_environment import RedactionEnvironment
     from models import ActionType, RedactionAction
 from dotenv import load_dotenv
+
 load_dotenv()
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
@@ -52,7 +53,9 @@ LABEL_PATTERNS: Dict[str, List[str]] = {
     ],
 }
 
-PII_REGEX_PATTERNS = [pattern for patterns in LABEL_PATTERNS.values() for pattern in patterns]
+PII_REGEX_PATTERNS = [
+    pattern for patterns in LABEL_PATTERNS.values() for pattern in patterns
+]
 
 
 def _is_gemma4_nvidia_model() -> bool:
@@ -115,7 +118,9 @@ def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
 
-def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+def log_step(
+    step: int, action: str, reward: float, done: bool, error: Optional[str]
+) -> None:
     done_val = str(done).lower()
     error_val = error if error else "null"
     print(
@@ -235,7 +240,9 @@ def _label_from_text(text: str) -> str:
     return "NAME"
 
 
-def _coerce_action(payload: Dict[str, Any], obs) -> Tuple[RedactionAction, Optional[str]]:
+def _coerce_action(
+    payload: Dict[str, Any], obs
+) -> Tuple[RedactionAction, Optional[str]]:
     if "action_type" not in payload and "action" in payload:
         payload = {**payload, "action_type": payload["action"]}
     if "action_type" not in payload:
@@ -256,8 +263,15 @@ def _coerce_action(payload: Dict[str, Any], obs) -> Tuple[RedactionAction, Optio
             if not label_value:
                 rel_start = max(0, snapped_start - int(obs.cursor_position))
                 rel_end = max(rel_start + 1, snapped_end - int(obs.cursor_position))
-                label_value = _label_from_text((obs.visible_text or "")[rel_start:rel_end])
-            payload = {**payload, "label": label_value, "start": snapped_start, "end": snapped_end}
+                label_value = _label_from_text(
+                    (obs.visible_text or "")[rel_start:rel_end]
+                )
+            payload = {
+                **payload,
+                "label": label_value,
+                "start": snapped_start,
+                "end": snapped_end,
+            }
         except Exception:
             pass
 
@@ -267,7 +281,9 @@ def _coerce_action(payload: Dict[str, Any], obs) -> Tuple[RedactionAction, Optio
         return RedactionAction(action_type=ActionType.NEXT_CHUNK), str(exc)
 
 
-def _snap_redact_span(obs, raw_start: int, raw_end: int, label: Optional[str] = None) -> Tuple[int, int]:
+def _snap_redact_span(
+    obs, raw_start: int, raw_end: int, label: Optional[str] = None
+) -> Tuple[int, int]:
     text = obs.visible_text or ""
     if not text:
         return raw_start, raw_end
@@ -300,9 +316,13 @@ def _snap_redact_span(obs, raw_start: int, raw_end: int, label: Optional[str] = 
     snapped_end = raw_end
 
     if start_candidates:
-        snapped_start = min(start_candidates, key=lambda candidate: abs(candidate - raw_start))
+        snapped_start = min(
+            start_candidates, key=lambda candidate: abs(candidate - raw_start)
+        )
     if end_candidates:
-        snapped_end = min(end_candidates, key=lambda candidate: abs(candidate - raw_end))
+        snapped_end = min(
+            end_candidates, key=lambda candidate: abs(candidate - raw_end)
+        )
 
     # Keep span sane and inside the document bounds.
     snapped_start = max(0, min(snapped_start, window_end - 1))
@@ -343,7 +363,9 @@ def _extract_json_object(text: str) -> Optional[str]:
     return None
 
 
-def _parse_action_payload(raw_text: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def _parse_action_payload(
+    raw_text: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     json_text = _extract_json_object(raw_text)
     if not json_text:
         return None, "no_json_object"
@@ -400,14 +422,18 @@ def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
         else:
             break
 
-    if trailing_next_chunks >= 3 and obs.cursor_position >= obs.document_length - len(obs.visible_text):
+    if trailing_next_chunks >= 3 and obs.cursor_position >= obs.document_length - len(
+        obs.visible_text
+    ):
         return RedactionAction(action_type=ActionType.FINISH), "cursor_clamped"
 
     prompt = _build_prompt(obs)
 
     # First attempt with strict JSON mode.
     try:
-        response = client.chat.completions.create(**_chat_completion_kwargs(prompt, use_json_mode=True))
+        response = client.chat.completions.create(
+            **_chat_completion_kwargs(prompt, use_json_mode=True)
+        )
         text = response.choices[0].message.content or ""
         payload, parse_error = _parse_action_payload(text)
         if payload is None:
@@ -424,7 +450,9 @@ def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
         if _is_server_error(msg):
             # Retry once without response_format for providers that fail on JSON mode.
             try:
-                response = client.chat.completions.create(**_chat_completion_kwargs(prompt, use_json_mode=False))
+                response = client.chat.completions.create(
+                    **_chat_completion_kwargs(prompt, use_json_mode=False)
+                )
                 text = response.choices[0].message.content or ""
                 payload, parse_error = _parse_action_payload(text)
                 if payload is None:
@@ -445,7 +473,9 @@ def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
         if _is_timeout_error(msg):
             # Retry once without JSON mode to reduce parse overhead.
             try:
-                response = client.chat.completions.create(**_chat_completion_kwargs(prompt, use_json_mode=False))
+                response = client.chat.completions.create(
+                    **_chat_completion_kwargs(prompt, use_json_mode=False)
+                )
                 text = response.choices[0].message.content or ""
                 payload, parse_error = _parse_action_payload(text)
                 if payload is not None:
@@ -480,7 +510,13 @@ def run_task(client: OpenAI, task_id: str) -> None:
             if info.get("invalid_action"):
                 error_value = "invalid_action"
 
-            log_step(step=step, action=action_str, reward=reward.total, done=done, error=error_value)
+            log_step(
+                step=step,
+                action=action_str,
+                reward=reward.total,
+                done=done,
+                error=error_value,
+            )
 
             if done:
                 break

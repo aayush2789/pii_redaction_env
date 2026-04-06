@@ -41,6 +41,30 @@ The difficulty rises from regex-friendly text to contextual and obfuscated PII t
 
 ## Environment Contract
 
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Window1 : Start of Document
+    
+    state "Visible Window (500 chars)" as Window1 {
+        Text: "...Patient [REDACTED] lived..."
+        Cursor: offset = 0
+    }
+    
+    Window1 --> Window1: REDACT(7, 12, "NAME")\n+ Reward
+    Window1 --> Window1: SKIP\nNo visible PII
+    
+    Window1 --> Window2: NEXT_CHUNK\n(+250 offset)
+    
+    state "Visible Window (500 chars)" as Window2 {
+        Text: "...[REDACTED] lived at 55..."
+        Cursor: offset = 250
+    }
+    
+    Window2 --> Window1: PREV_CHUNK\n(-250 offset)
+    Window2 --> [*]: FINISH\n(When Progress = 100%)
+```
+
 ## State Space
 
 The agent receives a structured `RedactionObservation` at every step. This is the state that the LLM reasons over in the sequential redaction loop.

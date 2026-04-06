@@ -65,11 +65,11 @@ def test_compute_grade_label_accuracy():
     """Verify label accuracy is computed separately and factored into score."""
     gt = [
         PIIEntity(label="EMAIL", start=10, end=28, text="john@example.com"),
-        PIIEntity(label="PHONE", start=50, end=62, text="555-0199")
+        PIIEntity(label="PHONE", start=50, end=62, text="555-0199"),
     ]
     detected = [
         PIIEntity(label="EMAIL", start=10, end=28, text="john@example.com"),
-        PIIEntity(label="DOB", start=50, end=62, text="555-0199") # Wrong label
+        PIIEntity(label="DOB", start=50, end=62, text="555-0199"),  # Wrong label
     ]
 
     grade = compute_grade(

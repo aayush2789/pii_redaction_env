@@ -60,7 +60,9 @@ def test_invalid_action_penalty():
     env.reset()
 
     _, reward, _, info = env.step(
-        RedactionAction(action_type=ActionType.REDACT, start=-1, end=99999, label="EMAIL")
+        RedactionAction(
+            action_type=ActionType.REDACT, start=-1, end=99999, label="EMAIL"
+        )
     )
 
     assert info["invalid_action"] is True
@@ -227,7 +229,12 @@ def test_duplicate_redaction_escalating_penalty():
     penalties = []
     for _ in range(3):
         _, reward, _, _ = env.step(
-            RedactionAction(action_type=ActionType.REDACT, start=span_start, end=span_end, label="NAME")
+            RedactionAction(
+                action_type=ActionType.REDACT,
+                start=span_start,
+                end=span_end,
+                label="NAME",
+            )
         )
         penalties.append(reward.components.get("duplicate_penalty", 0.0))
 
@@ -244,7 +251,12 @@ def test_reward_discriminability():
 
     email = next(entity for entity in env.ground_truth if entity.label == "EMAIL")
     _, tp_reward, _, _ = env.step(
-        RedactionAction(action_type=ActionType.REDACT, start=email.start, end=email.end, label=email.label)
+        RedactionAction(
+            action_type=ActionType.REDACT,
+            start=email.start,
+            end=email.end,
+            label=email.label,
+        )
     )
 
     env2 = RedactionEnvironment(task_id="gdpr_contract_easy")
@@ -331,7 +343,9 @@ def test_best_label_falls_back_to_regex_heuristic():
     email = None
     for seed in range(10):
         env.reset(seed=seed)
-        email = next((entity for entity in env.ground_truth if entity.label == "EMAIL"), None)
+        email = next(
+            (entity for entity in env.ground_truth if entity.label == "EMAIL"), None
+        )
         if email is not None:
             break
 

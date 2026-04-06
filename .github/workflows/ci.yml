@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          
+      - name: Set up Python
+        run: uv python install 3.12
+        
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+        
+      - name: Format Check (Ruff)
+        run: uvx ruff format --check .
+        
+      - name: Lint (Ruff)
+        run: uvx ruff check .
+        
+      - name: Run Tests (Pytest)
+        run: uv run pytest
+        
+      - name: OpenEnv Schema Validation
+        run: uv run openenv validate

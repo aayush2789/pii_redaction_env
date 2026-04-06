@@ -32,11 +32,13 @@ from __future__ import annotations
 
 import os
 from openenv.core.env_server.http_server import create_app
+
 try:
     from ..models import RedactionAction, RedactionObservation
 except ImportError:
     from models import RedactionAction, RedactionObservation
 from .pii_redaction_env_environment import RedactionEnvironment
+
 
 def create_redaction_environment() -> RedactionEnvironment:
     """Factory function that creates RedactionEnvironment with config."""
@@ -50,6 +52,7 @@ def create_redaction_environment() -> RedactionEnvironment:
         max_steps=max_steps,
     )
 
+
 app = create_app(
     create_redaction_environment,
     RedactionAction,
@@ -57,10 +60,12 @@ app = create_app(
     env_name="pii-redaction-env",
 )
 
+
 def main(host: str = "0.0.0.0", port: int = 8000) -> None:
     import uvicorn
 
     uvicorn.run(app, host=host, port=port)
+
 
 if __name__ == "__main__":
     main()

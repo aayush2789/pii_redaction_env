@@ -18,9 +18,7 @@ except ImportError:
     from models import PiiRedactionAction, PiiRedactionObservation
 
 
-class PiiRedactionEnv(
-    EnvClient[PiiRedactionAction, PiiRedactionObservation, State]
-):
+class PiiRedactionEnv(EnvClient[PiiRedactionAction, PiiRedactionObservation, State]):
     """
     Client for the Pii Redaction Env Environment.
 

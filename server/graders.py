@@ -59,12 +59,16 @@ def compute_grade(
 
     precision = tp / (tp + fp) if (tp + fp) else 0.0
     recall = tp / (tp + fn) if (tp + fn) else 0.0
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+    f1 = (
+        (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+    )
 
     # Label accuracy: fraction of matched spans with correct PII type label
     label_accuracy = (label_correct / label_total) if label_total > 0 else 0.0
 
-    over_redaction_ratio = (total_redacted_chars / document_length) if document_length else 0.0
+    over_redaction_ratio = (
+        (total_redacted_chars / document_length) if document_length else 0.0
+    )
     if over_redaction_ratio > 0.25:
         utility_score = max(0.0, 1 - 2 * (over_redaction_ratio - 0.25))
     else:

@@ -97,5 +97,16 @@
       {"label": "ADDRESS", "start": 293, "end": 309, "text": "310 Chestnut Way"},
       {"label": "SSN", "start": 338, "end": 391, "text": "three four five dash six seven dash eight nine zero one"}
     ]
+  },
+  {
+    "id": "hard_doc_011",
+    "text": "Threat payload intercepted. Adversary communicating via encoded sequences. Contact drop point identified as h4x0r[at]pr0t0n[dot]me. Threat actor alias discovered as zer0-c00l. Decrypted comms mention call the burner at area code nine-one-seven, 5 5 5, followed by zero two 9 nine. Suspect's home base traced to 1 3 3 7 Silicon Valley Blvd, Apt x0x0. Operations must avoid tagging corporate infrastructure IPs like 192.168.1.1 as personal data. Actor DOB listed in hex payload decrypted to nineteen ninety-nine january first.",
+    "entities": [
+      {"label": "EMAIL", "start": 108, "end": 130, "text": "h4x0r[at]pr0t0n[dot]me"},
+      {"label": "NAME", "start": 167, "end": 176, "text": "zer0-c00l"},
+      {"label": "PHONE", "start": 219, "end": 286, "text": "area code nine-one-seven, 5 5 5, followed by zero two 9 nine"},
+      {"label": "ADDRESS", "start": 321, "end": 358, "text": "1 3 3 7 Silicon Valley Blvd, Apt x0x0"},
+      {"label": "DOB", "start": 487, "end": 521, "text": "nineteen ninety-nine january first"}
+    ]
   }
 ]

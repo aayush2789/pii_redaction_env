@@ -1,0 +1,2 @@
+[console_scripts]
+server = pii_redaction_env.server.app:main

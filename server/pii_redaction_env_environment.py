@@ -1,4 +1,3 @@
-import math
 import random
 import re
 from collections import deque
@@ -8,6 +7,7 @@ from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
 
 from .graders import compute_grade
+
 try:
     from ..models import (
         ActionType,
@@ -32,7 +32,12 @@ from .tasks import TASKS, get_task, load_documents
 
 
 class RedactionEnvironment(Environment):
-    def __init__(self, task_id: Optional[str] = None, window_size: int = 500, max_steps: int = 100):
+    def __init__(
+        self,
+        task_id: Optional[str] = None,
+        window_size: int = 500,
+        max_steps: int = 100,
+    ):
         super().__init__()
         self._state = State(episode_id=None, step_count=0)
         self.window_size = window_size
@@ -66,7 +71,9 @@ class RedactionEnvironment(Environment):
                 self.max_steps = task.get("max_steps", max_steps)
             self._state = State(episode_id=task_id, step_count=0)
 
-    def reset(self, task_id: Optional[str] = None, seed: Optional[int] = None) -> RedactionObservation:
+    def reset(
+        self, task_id: Optional[str] = None, seed: Optional[int] = None
+    ) -> RedactionObservation:
         if task_id is not None:
             task = get_task(task_id)
             self.current_task = {"task_id": task_id, **task}
@@ -86,7 +93,9 @@ class RedactionEnvironment(Environment):
         self.current_doc = random.Random(effective_seed).choice(docs)
         if seed is None:
             self._seed += 1
-        self.ground_truth = [PIIEntity(**entity) for entity in self.current_doc.get("entities", [])]
+        self.ground_truth = [
+            PIIEntity(**entity) for entity in self.current_doc.get("entities", [])
+        ]
 
         self.cursor = 0
         self.redacted_spans = []
@@ -107,7 +116,9 @@ class RedactionEnvironment(Environment):
 
         return self._build_observation()
 
-    def step(self, action: RedactionAction) -> Tuple[RedactionObservation, RedactionReward, bool, dict]:
+    def step(
+        self, action: RedactionAction
+    ) -> Tuple[RedactionObservation, RedactionReward, bool, dict]:
         if self.current_doc is None:
             raise RuntimeError("Environment not initialized. Call reset() first.")
 
@@ -141,10 +152,14 @@ class RedactionEnvironment(Environment):
                 else:
                     self.redacted_spans.append((start, end))
                     self.detected_spans.append((start, end))
-                    self.total_redacted_chars = self._merged_span_length(self.redacted_spans)
+                    self.total_redacted_chars = self._merged_span_length(
+                        self.redacted_spans
+                    )
 
                     entity_text = self.current_doc["text"][start:end]
-                    detected = PIIEntity(label=action.label, start=start, end=end, text=entity_text)
+                    detected = PIIEntity(
+                        label=action.label, start=start, end=end, text=entity_text
+                    )
                     self.detected_entities.append(detected)
                     self._update_cached_metrics_for_detection(detected)
 
@@ -160,7 +175,9 @@ class RedactionEnvironment(Environment):
         if self.step_count >= self.max_steps:
             self.done = True
 
-        reward = self.compute_reward(action, old_potential, invalid_action=invalid_action)
+        reward = self.compute_reward(
+            action, old_potential, invalid_action=invalid_action
+        )
 
         observation = self._build_observation()
         info = {
@@ -199,10 +216,26 @@ class RedactionEnvironment(Environment):
         if self.current_doc is None:
             return 0.0
 
-        precision = self._cached_tp / (self._cached_tp + self._cached_fp) if (self._cached_tp + self._cached_fp) else 0.0
-        recall = self._cached_tp / (self._cached_tp + self._cached_fn) if (self._cached_tp + self._cached_fn) else 0.0
-        f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
-        label_accuracy = (self._cached_label_correct / self._cached_label_total) if self._cached_label_total else 0.0
+        precision = (
+            self._cached_tp / (self._cached_tp + self._cached_fp)
+            if (self._cached_tp + self._cached_fp)
+            else 0.0
+        )
+        recall = (
+            self._cached_tp / (self._cached_tp + self._cached_fn)
+            if (self._cached_tp + self._cached_fn)
+            else 0.0
+        )
+        f1 = (
+            (2 * precision * recall / (precision + recall))
+            if (precision + recall)
+            else 0.0
+        )
+        label_accuracy = (
+            (self._cached_label_correct / self._cached_label_total)
+            if self._cached_label_total
+            else 0.0
+        )
 
         doc_len = len(self.current_doc["text"])
         over_redaction_ratio = (self.total_redacted_chars / doc_len) if doc_len else 0.0
@@ -231,7 +264,12 @@ class RedactionEnvironment(Environment):
             success_threshold=self.current_task["success_threshold"],
         )
 
-    def compute_reward(self, action: RedactionAction, old_potential: float, invalid_action: bool = False) -> RedactionReward:
+    def compute_reward(
+        self,
+        action: RedactionAction,
+        old_potential: float,
+        invalid_action: bool = False,
+    ) -> RedactionReward:
         components: Dict[str, float] = {}
 
         # 1. Shaping Reward (PBRS): Delta Phi
@@ -248,7 +286,8 @@ class RedactionEnvironment(Environment):
 
         is_span_action = (
             action.action_type == ActionType.REDACT
-            and action.start is not None and action.end is not None
+            and action.start is not None
+            and action.end is not None
         )
 
         if is_span_action:
@@ -256,8 +295,7 @@ class RedactionEnvironment(Environment):
 
             # Duplicate action penalty
             dup_count = sum(
-                1 for prev in self._recent_redact_spans
-                if _iou_fn(span, prev) > 0.8
+                1 for prev in self._recent_redact_spans if _iou_fn(span, prev) > 0.8
             )
             if dup_count > 0:
                 duplicate_penalty = -0.2 * dup_count
@@ -331,7 +369,8 @@ class RedactionEnvironment(Environment):
         i = start
         while i < end:
             covering = [
-                span for span in self.redacted_spans
+                span
+                for span in self.redacted_spans
                 if span[0] <= i < span[1] and span[0] < end and span[1] > start
             ]
 
@@ -366,7 +405,11 @@ class RedactionEnvironment(Environment):
 
     def _regex_label(self, start: int, end: int) -> str:
         """Heuristic label based on span text when no GT match exists."""
-        text = self.current_doc["text"][start:end].strip() if self.current_doc is not None else ""
+        text = (
+            self.current_doc["text"][start:end].strip()
+            if self.current_doc is not None
+            else ""
+        )
         if re.fullmatch(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", text):
             return "EMAIL"
         if re.fullmatch(r"\d{3}[-\s]\d{2}[-\s]\d{4}", text):
@@ -392,8 +435,16 @@ class RedactionEnvironment(Environment):
         return sum(e - s for s, e in compact)
 
     def _compute_running_f1(self) -> float:
-        precision = self._cached_tp / (self._cached_tp + self._cached_fp) if (self._cached_tp + self._cached_fp) else 0.0
-        recall = self._cached_tp / (self._cached_tp + self._cached_fn) if (self._cached_tp + self._cached_fn) else 0.0
+        precision = (
+            self._cached_tp / (self._cached_tp + self._cached_fp)
+            if (self._cached_tp + self._cached_fp)
+            else 0.0
+        )
+        recall = (
+            self._cached_tp / (self._cached_tp + self._cached_fn)
+            if (self._cached_tp + self._cached_fn)
+            else 0.0
+        )
         if precision + recall == 0:
             return 0.0
         return round(2 * precision * recall / (precision + recall), 4)
