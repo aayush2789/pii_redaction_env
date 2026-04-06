@@ -288,7 +288,9 @@ class RedactionEnvironment(Environment):
             + invalid_penalty,
             4,
         )
-        total = raw_total
+        # Normalize to [0, 1] range as per competition rules.
+        # Maps [-1, 1] to [0, 1]. Clamps outliers.
+        total = round(max(0.0, min(1.0, (raw_total + 1.0) / 2.0)), 4)
 
         remaining_entities = max(0, self._cached_fn)
 
