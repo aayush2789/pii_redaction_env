@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -32,8 +33,7 @@ REQUEST_TIMEOUT_S = float(os.getenv("REQUEST_TIMEOUT_S", "90"))
 
 TASKS = ["gdpr_contract_easy", "hipaa_medical_medium", "security_logs_hard"]
 
-AUTH_BLOCK_REASON: Optional[str] = None
-BACKEND_BLOCK_REASON: Optional[str] = None
+logger = logging.getLogger(__name__)
 
 LABEL_PATTERNS: Dict[str, List[str]] = {
     "EMAIL": [r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"],
@@ -94,11 +94,6 @@ def _sanitize_api_key(value: Optional[str]) -> str:
     return token
 
 
-def _is_auth_error(message: str) -> bool:
-    low = message.lower()
-    return "401" in low or "unauthorized" in low or "authentication failed" in low
-
-
 def _is_server_error(message: str) -> bool:
     low = message.lower()
     return "500" in low or "internal server error" in low or "enginecore" in low
@@ -107,11 +102,6 @@ def _is_server_error(message: str) -> bool:
 def _is_timeout_error(message: str) -> bool:
     low = message.lower()
     return "timeout" in low or "timed out" in low or "read timeout" in low
-
-
-def _is_degraded_error(message: str) -> bool:
-    low = message.lower()
-    return "degraded" in low and "cannot be invoked" in low
 
 
 def log_start(task: str, env: str, model: str) -> None:
@@ -383,43 +373,7 @@ def _parse_action_payload(
         return None, str(exc)
 
 
-def _first_match(pattern: str, text: str) -> Optional[Tuple[int, int]]:
-    m = re.search(pattern, text, flags=re.IGNORECASE)
-    if not m:
-        return None
-    return m.start(), m.end()
-
-
-def _fallback_action(obs) -> RedactionAction:
-    # Deterministic local policy used when provider auth/config is invalid.
-    for label, patterns in LABEL_PATTERNS.items():
-        if not patterns:
-            continue
-        for pattern in patterns:
-            rel_span = _first_match(pattern, obs.visible_text)
-            if rel_span is not None:
-                start = obs.cursor_position + rel_span[0]
-                end = obs.cursor_position + rel_span[1]
-                return RedactionAction(
-                    action_type=ActionType.REDACT,
-                    start=start,
-                    end=end,
-                    label=label,
-                )
-
-    if obs.progress_pct >= 0.98:
-        return RedactionAction(action_type=ActionType.FINISH)
-    return RedactionAction(action_type=ActionType.NEXT_CHUNK)
-
-
 def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
-    global AUTH_BLOCK_REASON, BACKEND_BLOCK_REASON
-
-    if AUTH_BLOCK_REASON is not None:
-        return _fallback_action(obs), AUTH_BLOCK_REASON
-    if BACKEND_BLOCK_REASON is not None:
-        return _fallback_action(obs), BACKEND_BLOCK_REASON
-
     trailing_next_chunks = 0
     for previous_action in reversed(obs.previous_actions or []):
         if previous_action == "NEXT_CHUNK":
@@ -442,16 +396,12 @@ def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
         text = response.choices[0].message.content or ""
         payload, parse_error = _parse_action_payload(text)
         if payload is None:
-            return _fallback_action(obs), parse_error
+            logger.warning("Model response parse failed in JSON mode: %s", parse_error)
+            return RedactionAction(action_type=ActionType.NEXT_CHUNK), parse_error
         return _coerce_action(payload, obs)
     except Exception as exc:
         msg = str(exc)
-        if _is_auth_error(msg):
-            AUTH_BLOCK_REASON = "authentication_failed"
-            return _fallback_action(obs), AUTH_BLOCK_REASON
-        if _is_degraded_error(msg):
-            BACKEND_BLOCK_REASON = "backend_degraded"
-            return _fallback_action(obs), BACKEND_BLOCK_REASON
+        logger.exception("LLM request failed in JSON mode")
         if _is_server_error(msg):
             # Retry once without response_format for providers that fail on JSON mode.
             try:
@@ -461,20 +411,17 @@ def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
                 text = response.choices[0].message.content or ""
                 payload, parse_error = _parse_action_payload(text)
                 if payload is None:
-                    return _fallback_action(obs), parse_error
+                    logger.warning(
+                        "Model response parse failed without JSON mode: %s", parse_error
+                    )
+                    return RedactionAction(
+                        action_type=ActionType.NEXT_CHUNK
+                    ), parse_error
                 return _coerce_action(payload, obs)
             except Exception as retry_exc:
                 retry_msg = str(retry_exc)
-                if _is_auth_error(retry_msg):
-                    AUTH_BLOCK_REASON = "authentication_failed"
-                    return _fallback_action(obs), AUTH_BLOCK_REASON
-                if _is_degraded_error(retry_msg):
-                    BACKEND_BLOCK_REASON = "backend_degraded"
-                    return _fallback_action(obs), BACKEND_BLOCK_REASON
-                if _is_server_error(retry_msg):
-                    BACKEND_BLOCK_REASON = "backend_500"
-                    return _fallback_action(obs), BACKEND_BLOCK_REASON
-                return _fallback_action(obs), retry_msg
+                logger.exception("Retry without JSON mode failed")
+                return RedactionAction(action_type=ActionType.NEXT_CHUNK), retry_msg
         if _is_timeout_error(msg):
             # Retry once without JSON mode to reduce parse overhead.
             try:
@@ -485,9 +432,12 @@ def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
                 payload, parse_error = _parse_action_payload(text)
                 if payload is not None:
                     return _coerce_action(payload, obs)
+                logger.warning(
+                    "Model response parse failed after timeout retry: %s", parse_error
+                )
             except Exception:
-                pass
-        return _fallback_action(obs), msg
+                logger.exception("Timeout retry without JSON mode failed")
+        return RedactionAction(action_type=ActionType.NEXT_CHUNK), msg
 
 
 def run_task(client: OpenAI, task_id: str) -> None:
@@ -517,7 +467,13 @@ def run_task(client: OpenAI, task_id: str) -> None:
             if info.get("invalid_action"):
                 error_value = "invalid_action"
 
-            log_step(step=step, action=action_str, reward=clamped_reward, done=done, error=error_value)
+            log_step(
+                step=step,
+                action=action_str,
+                reward=clamped_reward,
+                done=done,
+                error=error_value,
+            )
 
             if done:
                 break
@@ -526,20 +482,17 @@ def run_task(client: OpenAI, task_id: str) -> None:
         score = max(0.0, min(1.0, float(grade.score)))
         success = bool(grade.success)
     except Exception:
+        logger.exception("Task execution failed for %s", task_id)
         success = False
     finally:
         log_end(success=success, steps=steps, score=score, rewards=rewards)
 
 
 def main() -> None:
-    global AUTH_BLOCK_REASON, BACKEND_BLOCK_REASON
-
     resolved_token = _sanitize_api_key(HF_TOKEN)
     if not resolved_token:
         raise RuntimeError("HF_TOKEN (or OPENAI_API_KEY) is required.")
 
-    AUTH_BLOCK_REASON = None
-    BACKEND_BLOCK_REASON = None
     client = OpenAI(base_url=API_BASE_URL, api_key=resolved_token)
     for task_id in TASKS:
         run_task(client, task_id)

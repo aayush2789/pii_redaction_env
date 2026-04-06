@@ -32,7 +32,12 @@ from .tasks import TASKS, get_task, load_documents
 
 
 class RedactionEnvironment(Environment):
-    def __init__(self, task_id: Optional[str] = None, window_size: int = 200, max_steps: int = 100):
+    def __init__(
+        self,
+        task_id: Optional[str] = None,
+        window_size: int = 200,
+        max_steps: int = 100,
+    ):
         super().__init__()
         self._state = State(episode_id=None, step_count=0)
         self.window_size = window_size
@@ -188,8 +193,9 @@ class RedactionEnvironment(Environment):
         for idx, gt in enumerate(self.ground_truth):
             if idx in self._matched_gt_indices:
                 continue
+            # More lenient matching for reward shaping
             score = _iou_fn((det.start, det.end), (gt.start, gt.end))
-            if score > 0.6 and score > best_iou:
+            if score > 0.4 and score > best_iou:
                 best_iou = score
                 best_idx = idx
 
@@ -269,7 +275,8 @@ class RedactionEnvironment(Environment):
 
         # 1. Shaping Reward (PBRS): Delta Phi
         new_potential = self._calculate_potential()
-        gamma = 0.99
+        # Use gamma=1.0 for episodic tasks to ensure policy invariance with F1 metric
+        gamma = 1.0
         shaping_reward = (gamma * new_potential) - old_potential
         components["shaping_potential"] = round(shaping_reward, 4)
 
@@ -302,8 +309,9 @@ class RedactionEnvironment(Environment):
                 if self.ground_truth
                 else 0.0
             )
-            if best_iou > 0.6:
-                tp_bonus = 0.1 * best_iou
+            if best_iou > 0.4:
+                # Direct bonus for TP to ensure it's always positive and noticeable
+                tp_bonus = 0.5 * best_iou
                 fp_penalty = 0.0
             else:
                 fp_penalty = -0.2 * (1 - best_iou)
@@ -415,7 +423,7 @@ class RedactionEnvironment(Environment):
             return "DOB"
         return "NAME"
 
-    def _merged_span_length(self, spans: List[Tuple[int, int]]) -> int:
+    def _merged_span_length(self, spans: List[tuple[int, int]]) -> int:
         if not spans:
             return 0
 

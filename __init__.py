@@ -4,8 +4,8 @@ from .client import RedactionEnv
 from .models import ActionType, RedactionAction, RedactionObservation
 
 __all__ = [
-	"ActionType",
-	"RedactionAction",
-	"RedactionObservation",
-	"RedactionEnv",
+    "ActionType",
+    "RedactionAction",
+    "RedactionObservation",
+    "RedactionEnv",
 ]

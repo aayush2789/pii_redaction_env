@@ -19,10 +19,10 @@ Endpoints:
 
 Usage:
     # Development (with auto-reload):
-    uvicorn server.app:app --reload --host 0.0.0.0 --port 8000
+    uvicorn server.app:app --reload --host 0.0.0.0 --port 7860
 
     # Production:
-    uvicorn server.app:app --host 0.0.0.0 --port 8000 --workers 4
+    uvicorn server.app:app --host 0.0.0.0 --port 7860 --workers 4
 
     # Or run directly:
     python -m server.app
@@ -61,7 +61,27 @@ app = create_app(
 )
 
 
-def main(host: str = "0.0.0.0", port: int = 8000) -> None:
+@app.post("/grade")
+async def grade() -> dict:
+    """Explicitly expose the grade method of the environment."""
+    # Note: create_app stores the env factory/instance.
+    # We can get the environment from the app state if needed,
+    # but the simplest way is to use the environment associated with the request session.
+    # For now, we'll assume a single-session model or use the env_registry.
+    from openenv.core.env_server.http_server import get_env_registry
+
+    registry = get_env_registry(app)
+    # Get the first active env (for single-session local testing)
+    envs = list(registry.envs.values())
+    if not envs:
+        return {"error": "No active environment session"}
+    env = envs[0]
+    grade_obj = env.grade()
+    # TaskGrade is a pydantic model, so we can use model_dump()
+    return grade_obj.model_dump()
+
+
+def main(host: str = "0.0.0.0", port: int = 7860) -> None:
     import uvicorn
 
     uvicorn.run(app, host=host, port=port)

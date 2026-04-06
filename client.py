@@ -11,6 +11,7 @@ from typing import Dict
 from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
+import httpx
 
 try:
     from .models import RedactionAction, RedactionObservation
@@ -28,7 +29,7 @@ class RedactionEnv(EnvClient[RedactionAction, RedactionObservation, State]):
 
     Example:
         >>> # Connect to a running server
-        >>> with RedactionEnv(base_url="http://localhost:8000") as client:
+        >>> with RedactionEnv(base_url="http://localhost:7860") as client:
         ...     result = client.reset()
         ...     print(result.observation.visible_text)
         ...
@@ -44,6 +45,10 @@ class RedactionEnv(EnvClient[RedactionAction, RedactionObservation, State]):
         ... finally:
         ...     client.close()
     """
+
+    def __init__(self, base_url: str, **kwargs):
+        super().__init__(base_url=base_url, **kwargs)
+        self.base_url = base_url
 
     def _step_payload(self, action: RedactionAction) -> Dict:
         """
@@ -90,6 +95,20 @@ class RedactionEnv(EnvClient[RedactionAction, RedactionObservation, State]):
             episode_id=payload.get("episode_id"),
             step_count=payload.get("step_count", 0),
         )
+
+    async def grade(self) -> dict:
+        """
+        Get the final grade/score for the current task from the server.
+
+        Returns:
+            Dictionary with 'score', 'success', and other grade details.
+        """
+        async with httpx.AsyncClient() as client:
+            # We use the HTTP endpoint directly since grade is not a standard OpenEnv message
+            url = f"{self.base_url.rstrip('/')}/grade"
+            response = await client.post(url, timeout=30.0)
+            response.raise_for_status()
+            return response.json()
 
 
 # Backward-compatible alias.

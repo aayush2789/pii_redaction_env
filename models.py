@@ -13,6 +13,7 @@ The pii_redaction_env environment is a simple test environment that echoes back 
 from enum import Enum
 from typing import Dict, List, Literal, Optional, Tuple
 
+from openenv.core.env_server.types import Observation
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -61,7 +62,7 @@ class RedactionAction(BaseModel):
         return self
 
 
-class RedactionObservation(BaseModel):
+class RedactionObservation(Observation):
     task_id: str
     document_id: str
     visible_text: str
@@ -70,7 +71,7 @@ class RedactionObservation(BaseModel):
     redacted_spans: List[Tuple[int, int]]
     progress_pct: float
     previous_actions: List[str]
-    done: bool
+    done: bool = False
 
 
 class RedactionReward(BaseModel):

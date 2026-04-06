@@ -5,7 +5,7 @@ colorFrom: gray
 colorTo: yellow
 sdk: docker
 pinned: false
-app_port: 8000
+app_port: 7860
 base_path: /web
 tags:
   - openenv
@@ -57,7 +57,7 @@ from pii_redaction_env import ActionType, RedactionAction, RedactionEnv
 
 
 async def main() -> None:
-  async with RedactionEnv(base_url="http://localhost:8000") as env:
+  async with RedactionEnv(base_url="http://localhost:7860") as env:
     await env.reset()
     result = await env.step(RedactionAction(action_type=ActionType.NEXT_CHUNK))
     print(result.observation.progress_pct)
@@ -284,7 +284,7 @@ uv run pytest
 Start the FastAPI server:
 
 ```bash
-uv run uvicorn server.app:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn server.app:app --reload --host 0.0.0.0 --port 7860
 ```
 
 Or use the packaged entry point:
@@ -304,7 +304,7 @@ docker build -t pii_redaction_env-env:latest -f server/Dockerfile .
 Run it:
 
 ```bash
-docker run --rm -p 8000:8000 pii_redaction_env-env:latest
+docker run --rm -p 7860:7860 pii_redaction_env-env:latest
 ```
 
 ## Hugging Face Spaces
@@ -317,7 +317,7 @@ To deploy:
 openenv push
 ```
 
-The deployed space exposes the web UI at `/web`, with the API served from the same container on port `8000`.
+The deployed space exposes the web UI at `/web`, with the API served from the same container on port `7860`.
 
 ## Project Layout
 

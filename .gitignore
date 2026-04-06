@@ -4,3 +4,4 @@
 .pytest_cache
 .DS_Store
 .env
+/openenv_pii_redaction_env.egg-info
