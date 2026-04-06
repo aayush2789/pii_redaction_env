@@ -27,6 +27,61 @@ The environment is designed to test three things at once:
 2. Type classification: can it assign the right label?
 3. Coverage discipline: can it finish the document without over-redacting unrelated text?
 
+## Quick Start
+
+Connect from Python using `RedactionEnv`:
+
+```python
+import asyncio
+
+from pii_redaction_env import ActionType, RedactionAction, RedactionEnv
+
+
+async def main() -> None:
+  async with RedactionEnv.from_env("Aayush5665/pii_redaction_env") as env:
+    await env.reset()
+    result = await env.step(RedactionAction(action_type=ActionType.SKIP))
+    print(result.reward)
+
+
+if __name__ == "__main__":
+  asyncio.run(main())
+```
+
+Or connect directly to a running server:
+
+```python
+import asyncio
+
+from pii_redaction_env import ActionType, RedactionAction, RedactionEnv
+
+
+async def main() -> None:
+  async with RedactionEnv(base_url="http://localhost:8000") as env:
+    await env.reset()
+    result = await env.step(RedactionAction(action_type=ActionType.NEXT_CHUNK))
+    print(result.observation.progress_pct)
+
+
+if __name__ == "__main__":
+  asyncio.run(main())
+```
+
+## Contribute to This Environment
+
+Fork on Hugging Face Hub:
+
+```bash
+openenv fork Aayush5665/pii_redaction_env --repo-id <your-username>/<your-repo-name>
+```
+
+Then push your changes as a PR:
+
+```bash
+cd <forked-repo>
+openenv push Aayush5665/pii_redaction_env --create-pr
+```
+
 ## Tasks
 
 The bundled tasks come from synthetic documents with different difficulty profiles:
@@ -149,7 +204,7 @@ where:
 - `r_dup` discourages repeated redaction of the same area.
 - `r_invalid` penalizes malformed spans or out-of-bounds actions.
 
-The final step reward is normalized into `[0, 1]`, while the raw shaped signal is also exposed for debugging.
+The environment returns raw step rewards, while competition logging in `inference.py` clamps rewards into `[0, 1]`.
 
 ### Terminal Scoring
 
