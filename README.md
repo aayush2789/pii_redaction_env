@@ -6,7 +6,7 @@ colorTo: yellow
 sdk: docker
 pinned: false
 app_port: 7860
-base_path: /web
+app_port: 7860
 tags:
   - openenv
 ---
