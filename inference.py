@@ -129,12 +129,17 @@ def log_step(
     )
 
 
-def log_end(success: bool, steps: int, rewards: List[float]) -> None:
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
-        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
+        f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}",
         flush=True,
     )
+
+
+def _clamp_reward(raw_reward: float) -> float:
+    """Clamp raw reward from [-1, 1] into [0, 1] for competition logs."""
+    return round(max(0.0, min(1.0, (raw_reward + 1.0) / 2.0)), 4)
 
 
 def _build_prompt(obs) -> str:
@@ -490,6 +495,7 @@ def run_task(client: OpenAI, task_id: str) -> None:
     rewards: List[float] = []
     steps = 0
     success = False
+    score = 0.0
 
     log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
 
@@ -504,29 +510,25 @@ def run_task(client: OpenAI, task_id: str) -> None:
 
             obs, reward, done, info = env.step(action)
             steps = step
-            rewards.append(reward.total)
+            clamped_reward = _clamp_reward(reward.raw_total)
+            rewards.append(clamped_reward)
 
             error_value: Optional[str] = action_error
             if info.get("invalid_action"):
                 error_value = "invalid_action"
 
-            log_step(
-                step=step,
-                action=action_str,
-                reward=reward.total,
-                done=done,
-                error=error_value,
-            )
+            log_step(step=step, action=action_str, reward=clamped_reward, done=done, error=error_value)
 
             if done:
                 break
 
         grade = env.grade()
+        score = max(0.0, min(1.0, float(grade.score)))
         success = bool(grade.success)
     except Exception:
         success = False
     finally:
-        log_end(success=success, steps=steps, rewards=rewards)
+        log_end(success=success, steps=steps, score=score, rewards=rewards)
 
 
 def main() -> None:

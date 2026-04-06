@@ -32,12 +32,7 @@ from .tasks import TASKS, get_task, load_documents
 
 
 class RedactionEnvironment(Environment):
-    def __init__(
-        self,
-        task_id: Optional[str] = None,
-        window_size: int = 500,
-        max_steps: int = 100,
-    ):
+    def __init__(self, task_id: Optional[str] = None, window_size: int = 200, max_steps: int = 100):
         super().__init__()
         self._state = State(episode_id=None, step_count=0)
         self.window_size = window_size
@@ -326,9 +321,9 @@ class RedactionEnvironment(Environment):
             + invalid_penalty,
             4,
         )
-        # Normalize to [0, 1] range as per competition rules.
-        # Maps [-1, 1] to [0, 1]. Clamps outliers.
-        total = round(max(0.0, min(1.0, (raw_total + 1.0) / 2.0)), 4)
+        # Keep environment reward unnormalized. Competition-facing clamping is
+        # applied in inference logging/output.
+        total = raw_total
 
         remaining_entities = max(0, self._cached_fn)
 

@@ -1,247 +1,171 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 """
-Julia Code Action Environment.
+Inference Script Example
+===================================
+MANDATORY
+- Before submitting, ensure the following variables are defined in your environment configuration:
+    API_BASE_URL   The API endpoint for the LLM.
+    MODEL_NAME     The model identifier to use for inference.
+    HF_TOKEN       Your Hugging Face / API key.
+    LOCAL_IMAGE_NAME The name of the local image to use for the environment if you are using from_docker_image()
+                     method
 
-This module provides a server-side environment implementation for executing
-Julia code actions using JuliaExecutor.
+- Defaults are set only for API_BASE_URL and MODEL_NAME 
+    (and should reflect your active inference setup):
+    API_BASE_URL = os.getenv("API_BASE_URL", "<your-active-endpoint>")
+    MODEL_NAME = os.getenv("MODEL_NAME", "<your-active-model>")
+    
+- The inference script must be named `inference.py` and placed in the root directory of the project
+- Participants must use OpenAI Client for all LLM calls using above variables
+
+STDOUT FORMAT
+- The script must emit exactly three line types to stdout, in this order:
+
+    [START] task=<task_name> env=<benchmark> model=<model_name>
+    [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
+    [END]   success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...,rn>
+
+  Rules:
+    - One [START] line at episode begin.
+    - One [STEP] line per step, immediately after env.step() returns.
+    - One [END] line after env.close(), always emitted (even on exception).
+    - reward and rewards are formatted to 2 decimal places.
+    - done and success are lowercase booleans: true or false.
+    - error is the raw last_action_error string, or null if none.
+    - All fields on a single line with no newlines within a line.
+    - Each tasks should return score in [0, 1]
+
+  Example:
+    [START] task=click-test env=miniwob model=Qwen3-VL-30B
+    [STEP] step=1 action=click('123') reward=0.00 done=false error=null
+    [STEP] step=2 action=fill('456','text') reward=0.00 done=false error=null
+    [STEP] step=3 action=click('789') reward=1.00 done=true error=null
+    [END] success=true steps=3 score=1.00 rewards=0.00,0.00,1.00
 """
 
-import itertools
-import logging
-import re
-import time
-import uuid
+import asyncio
+import os
+import textwrap
+from typing import List, Optional
 
-# Support both in-repo and standalone imports
-try:
-    # In-repo imports (when running from OpenEnv repository)
-    from openenv.core.env_server.interfaces import Action, Environment, Observation
+from openai import OpenAI
 
-    from ..models import JuliaAction, JuliaObservation, JuliaState
-    from .julia_executor import JuliaExecutor
-    from .julia_transforms import create_safe_julia_transform
-except ImportError:
-    from models import JuliaAction, JuliaObservation, JuliaState
+from my_env_v4 import MyEnvV4Action, MyEnvV4Env
+IMAGE_NAME = os.getenv("IMAGE_NAME") # If you are using docker image 
+API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
-    # Standalone imports (when environment is standalone)
-    from openenv.core.env_server.interfaces import Action, Environment, Observation
-    from server.julia_executor import JuliaExecutor
-    from server.julia_transforms import create_safe_julia_transform
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+TASK_NAME = os.getenv("MY_ENV_V4_TASK", "echo")
+BENCHMARK = os.getenv("MY_ENV_V4_BENCHMARK", "my_env_v4")
+MAX_STEPS = 8
+TEMPERATURE = 0.7
+MAX_TOKENS = 150
+SUCCESS_SCORE_THRESHOLD = 0.1  # normalized score in [0, 1]
 
-# Get logger for this module (inherits from julia_env logger)
-logger = logging.getLogger("julia_env.codeact")
+# Max possible reward: each token contributes 0.1, across all steps
+_MAX_REWARD_PER_STEP = MAX_TOKENS * 0.1
+MAX_TOTAL_REWARD = MAX_STEPS * _MAX_REWARD_PER_STEP
 
-# Thread-safe request counter for tracking
-_request_counter = itertools.count(1)
-
-
-def _detect_infinite_loop(code: str) -> tuple[bool, str]:
+SYSTEM_PROMPT = textwrap.dedent(
     """
-    Detect potential infinite loops in Julia code.
-
-    This function scans for `while true` loops without break/return/error statements.
-
-    Args:
-        code: Julia code string to analyze
-
-    Returns:
-        Tuple of (has_infinite_loop: bool, reason: str)
+    You are interacting with a simple echo environment.
+    Each turn you must send a message. The environment will echo it back.
+    Reward is proportional to message length: reward = len(message) * 0.1
+    Your goal is to maximize total reward by sending meaningful, substantive messages.
+    Reply with exactly one message string — no quotes, no prefixes, just the message text.
     """
-    # Remove comments and strings to avoid false positives
-    # Remove single-line comments
-    code_without_comments = re.sub(r"#.*", "", code)
-    # Remove multi-line strings (triple quotes)
-    code_without_comments = re.sub(
-        r'""".*?"""', "", code_without_comments, flags=re.DOTALL
-    )
-    # Remove single-line strings
-    code_without_comments = re.sub(r'"[^"]*"', "", code_without_comments)
+).strip()
 
-    # Find all while true blocks
-    while_true_pattern = r"\bwhile\s+true\b"
-    while_true_matches = list(
-        re.finditer(while_true_pattern, code_without_comments, re.IGNORECASE)
+
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_val = error if error else "null"
+    done_val = str(done).lower()
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        flush=True,
     )
 
-    if not while_true_matches:
-        return False, ""
 
-    # For each while true, check if there's a break/return/error in the same block
-    for match in while_true_matches:
-        start_pos = match.end()
-
-        # Find the end of this while block by counting 'while'/'end' pairs
-        # Simplified heuristic: look for break/return/error before the corresponding 'end'
-        remaining_code = code_without_comments[start_pos:]
-
-        # Extract potential loop body (up to next 'end' keyword)
-        # This is a simplified check - doesn't perfectly handle nested blocks
-        end_match = re.search(r"\bend\b", remaining_code)
-        if end_match:
-            loop_body = remaining_code[: end_match.start()]
-        else:
-            loop_body = remaining_code
-
-        # Check for loop exit mechanisms in this block
-        has_break = re.search(r"\bbreak\b", loop_body) is not None
-        has_return = re.search(r"\breturn\b", loop_body) is not None
-        has_error = re.search(r"\berror\(", loop_body) is not None
-        has_throw = re.search(r"\bthrow\(", loop_body) is not None
-        has_exit = re.search(r"\bexit\(", loop_body) is not None
-
-        if not (has_break or has_return or has_error or has_throw or has_exit):
-            loop_preview = loop_body[:100].strip()
-            return (
-                True,
-                f"Infinite loop detected: 'while true' without break/return/error/throw. Preview: {loop_preview}",
-            )
-
-    return False, ""
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
 
-class JuliaCodeActEnv(Environment):
-    """
-    Julia Code Action Environment for executing code and tracking state.
-
-    This environment executes Julia code submitted as JuliaAction during step,
-    maintains the last exit code in its state, and returns results wrapped
-    in JuliaObservation.
-
-    Example:
-        >>> env = JuliaCodeActEnv()
-        >>> obs = env.reset()
-        >>> action = JuliaAction(core_code='println("Hello, Julia!")', test_code='')
-        >>> obs = env.step(action)
-        >>> print(obs.stdout)  # "Hello, Julia!\\n"
-        >>> print(obs.exit_code)  # 0
-        >>> print(env.state.last_exit_code)  # 0
-    """
-
-    # Allow concurrent sessions - each session has its own isolated state
-    SUPPORTS_CONCURRENT_SESSIONS = True
-
-    def __init__(self, use_process_pool: bool = True):
+def build_user_prompt(step: int, last_echoed: str, last_reward: float, history: List[str]) -> str:
+    history_block = "\n".join(history[-4:]) if history else "None"
+    return textwrap.dedent(
+        f"""
+        Step: {step}
+        Last echoed message: {last_echoed!r}
+        Last reward: {last_reward:.2f}
+        Previous steps:
+        {history_block}
+        Send your next message.
         """
-        Initialize the Julia Code Act Environment.
+    ).strip()
 
-        Args:
-            use_process_pool: Use persistent Julia process pool for better performance
-                            and to avoid Juliaup lock contention (default: True)
-        """
-        self._executor = JuliaExecutor(use_process_pool=use_process_pool)
-        self._state = JuliaState()
-        self.transform = create_safe_julia_transform()
 
-    def reset(self, **kwargs) -> Observation:
-        """
-        Reset environment for a fresh Julia execution session.
-        Returns an empty JuliaObservation with exit_code=0.
-
-        Note: Executor is reused to leverage process pool.
-        """
-        self._state = JuliaState(episode_id=str(uuid.uuid4()), step_count=0)
-        self._state.last_exit_code = 0
-        self._state.last_code_compiles = True
-        # Don't recreate executor - reuse it to leverage process pool
-
-        observation = JuliaObservation(
-            stdout="",
-            stderr="",
-            exit_code=0,
-            reward=0.0,
-            metadata={"core_code": "", "test_code": ""},
-            tests_passed=0,
-            tests_failed=0,
-            code_compiles=True,
+def get_model_message(client: OpenAI, step: int, last_echoed: str, last_reward: float, history: List[str]) -> str:
+    user_prompt = build_user_prompt(step, last_echoed, last_reward, history)
+    try:
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=TEMPERATURE,
+            max_tokens=MAX_TOKENS,
+            stream=False,
         )
+        text = (completion.choices[0].message.content or "").strip()
+        return text if text else "hello"
+    except Exception as exc:
+        print(f"[DEBUG] Model request failed: {exc}", flush=True)
+        return "hello"
 
-        observation = self._apply_transform(observation)
-        return observation
 
-    def step(self, action: Action, **kwargs) -> Observation:
-        """
-        Execute Julia code and return the result as JuliaObservation.
+async def main() -> None:
+    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
-        Optimized single-pass execution:
-        - Runs core_code + test_code together
-        - Infers compilation status from combined execution
-        - 2x faster than double execution
+    env = await MyEnvV4Env.from_docker_image(IMAGE_NAME)
 
-        Args:
-            action: JuliaAction with core_code and optional test_code
-            **kwargs: Optional parameters including:
-                - timeout: Execution timeout in seconds (default: 120)
-        """
-        request_id = next(_request_counter)
+    history: List[str] = []
+    rewards: List[float] = []
+    steps_taken = 0
+    score = 0.0
+    success = False
 
-        if not isinstance(action, JuliaAction):
-            logger.error(f"[REQ-{request_id}] Invalid action type: {type(action)}")
-            raise ValueError(f"Expected JuliaAction, got {type(action)}")
+    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
-        # Get timeout from kwargs (default handled by executor)
-        timeout = kwargs.get("timeout")
+    try:
+        result = await env.reset() # OpenENV.reset()
+        last_echoed = result.observation.echoed_message
+        last_reward = 0.0
 
-        # Log request details
-        code_preview = (
-            action.core_code[:200] + "..."
-            if len(action.core_code) > 200
-            else action.core_code
-        )
-        logger.info(f"[REQ-{request_id}] === NEW EXECUTION REQUEST ===")
-        logger.info(
-            f"[REQ-{request_id}] Session: {self._state.episode_id}, Step: {self._state.step_count}"
-        )
-        logger.info(
-            f"[REQ-{request_id}] Code length: {len(action.core_code)} chars, Test length: {len(action.test_code or '')} chars"
-        )
-        logger.debug(f"[REQ-{request_id}] Code preview: {code_preview}")
-        logger.info(
-            f"[REQ-{request_id}] Timeout: {timeout}s"
-            if timeout
-            else f"[REQ-{request_id}] Timeout: default"
-        )
+        for step in range(1, MAX_STEPS + 1):
+            if result.done:
+                break
 
-        start_time = time.time()
+            message = get_model_message(client, step, last_echoed, last_reward, history)
 
-        # Single execution: Run core_code + test_code together (if test_code provided)
-        if action.test_code:
-            combined_code = action.core_code + "\n\n" + action.test_code
-        else:
-            combined_code = action.core_code
+            result = await env.step(MyEnvV4Action(message=message))
+            obs = result.observation
 
-        # Pre-execution check: detect infinite loops to avoid timeout
-        has_infinite_loop, loop_reason = _detect_infinite_loop(action.core_code)
-        if has_infinite_loop:
-            logger.warning(f"[REQ-{request_id}] INFINITE LOOP DETECTED: {loop_reason}")
+            reward = result.reward or 0.0
+            done = result.done
+            error = None
 
-            # Update environment state
-            self._state.step_count += 1
-            self._state.last_exit_code = 1
-            self._state.last_code_compiles = True  # Code compiles but has infinite loop
-            self._state.total_tests_passed = 0
-            self._state.total_tests_failed = 0
+            rewards.append(reward)
+            steps_taken = step
+            last_echoed = obs.echoed_message
+            last_reward = reward
 
-            # Build observation with penalty
-            observation = JuliaObservation(
-                stdout="",
-                stderr=f"Infinite loop detected (pre-execution check): {loop_reason}",
-                exit_code=1,
-                reward=-1.0,  # Penalize infinite loops
-                metadata={
-                    "core_code": action.core_code,
-                    "test_code": action.test_code or "",
-                    "infinite_loop_detected": True,
-                    "infinite_loop_reason": loop_reason,
-                },
-                tests_passed=0,
-                tests_failed=0,
-                code_compiles=True,  # Code would compile, but not run
-            )
+            log_step(step=step, action=message, reward=reward, done=done, error=error)
 
             logger.info(
                 f"[REQ-{request_id}] RESULT: infinite_loop=True, "

@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Pii Redaction Env Environment Client."""
+"""Pii Redaction Env client."""
 
 from typing import Dict
 
@@ -13,14 +13,14 @@ from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
 try:
-    from .models import PiiRedactionAction, PiiRedactionObservation
+    from .models import RedactionAction, RedactionObservation
 except ImportError:
-    from models import PiiRedactionAction, PiiRedactionObservation
+    from models import RedactionAction, RedactionObservation
 
 
-class PiiRedactionEnv(EnvClient[PiiRedactionAction, PiiRedactionObservation, State]):
+class RedactionEnv(EnvClient[RedactionAction, RedactionObservation, State]):
     """
-    Client for the Pii Redaction Env Environment.
+    Client for the Pii Redaction Env environment.
 
     This client maintains a persistent WebSocket connection to the environment server,
     enabling efficient multi-step interactions with lower latency.
@@ -28,55 +28,47 @@ class PiiRedactionEnv(EnvClient[PiiRedactionAction, PiiRedactionObservation, Sta
 
     Example:
         >>> # Connect to a running server
-        >>> with PiiRedactionEnv(base_url="http://localhost:8000") as client:
+        >>> with RedactionEnv(base_url="http://localhost:8000") as client:
         ...     result = client.reset()
-        ...     print(result.observation.echoed_message)
+        ...     print(result.observation.visible_text)
         ...
-        ...     result = client.step(PiiRedactionAction(message="Hello!"))
-        ...     print(result.observation.echoed_message)
+        ...     result = client.step(RedactionAction(action_type="SKIP"))
+        ...     print(result.observation.progress_pct)
 
     Example with Docker:
         >>> # Automatically start container and connect
-        >>> client = PiiRedactionEnv.from_docker_image("pii_redaction_env-env:latest")
+        >>> client = RedactionEnv.from_docker_image("pii_redaction_env-env:latest")
         >>> try:
         ...     result = client.reset()
-        ...     result = client.step(PiiRedactionAction(message="Test"))
+        ...     result = client.step(RedactionAction(action_type="NEXT_CHUNK"))
         ... finally:
         ...     client.close()
     """
 
-    def _step_payload(self, action: PiiRedactionAction) -> Dict:
+    def _step_payload(self, action: RedactionAction) -> Dict:
         """
-        Convert PiiRedactionAction to JSON payload for step message.
+        Convert RedactionAction to JSON payload for step message.
 
         Args:
-            action: PiiRedactionAction instance
+            action: RedactionAction instance
 
         Returns:
             Dictionary representation suitable for JSON encoding
         """
-        return {
-            "message": action.message,
-        }
+        return action.model_dump(exclude_none=True)
 
-    def _parse_result(self, payload: Dict) -> StepResult[PiiRedactionObservation]:
+    def _parse_result(self, payload: Dict) -> StepResult[RedactionObservation]:
         """
-        Parse server response into StepResult[PiiRedactionObservation].
+        Parse server response into StepResult[RedactionObservation].
 
         Args:
             payload: JSON response data from server
 
         Returns:
-            StepResult with PiiRedactionObservation
+            StepResult with RedactionObservation
         """
         obs_data = payload.get("observation", {})
-        observation = PiiRedactionObservation(
-            echoed_message=obs_data.get("echoed_message", ""),
-            message_length=obs_data.get("message_length", 0),
-            done=payload.get("done", False),
-            reward=payload.get("reward"),
-            metadata=obs_data.get("metadata", {}),
-        )
+        observation = RedactionObservation(**obs_data)
 
         return StepResult(
             observation=observation,
@@ -98,3 +90,7 @@ class PiiRedactionEnv(EnvClient[PiiRedactionAction, PiiRedactionObservation, Sta
             episode_id=payload.get("episode_id"),
             step_count=payload.get("step_count", 0),
         )
+
+
+# Backward-compatible alias.
+PiiRedactionEnv = RedactionEnv
