@@ -74,11 +74,13 @@ class RedactionEnv(EnvClient[RedactionAction, RedactionObservation, State]):
         """
         obs_data = payload.get("observation", {})
         observation = RedactionObservation(**obs_data)
+        reward_value = payload.get("reward", obs_data.get("reward"))
+        done_value = payload.get("done", observation.done)
 
         return StepResult(
             observation=observation,
-            reward=payload.get("reward"),
-            done=payload.get("done", False),
+            reward=reward_value,
+            done=done_value,
         )
 
     def _parse_state(self, payload: Dict) -> State:

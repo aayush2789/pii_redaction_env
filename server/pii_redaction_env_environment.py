@@ -180,6 +180,14 @@ class RedactionEnvironment(Environment):
         )
 
         observation = self._build_observation()
+        # Also mirror reward into observation for transports that only serialize observation fields.
+        observation.reward = reward.raw_total
+        observation.metadata = {
+            **(observation.metadata or {}),
+            "reward_total": reward.total,
+            "reward_raw_total": reward.raw_total,
+            "reward_components": reward.components,
+        }
         info = {
             "step": self.step_count,
             "invalid_action": invalid_action,
@@ -329,8 +337,7 @@ class RedactionEnvironment(Environment):
             + invalid_penalty,
             4,
         )
-        # Keep environment reward unnormalized. Competition-facing clamping is
-        # applied in inference logging/output.
+        # Unormalized total reward is used for grading and analysis, while the shaping component can be scaled if needed.
         total = raw_total
 
         remaining_entities = max(0, self._cached_fn)

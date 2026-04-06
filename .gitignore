@@ -5,3 +5,5 @@
 .DS_Store
 .env
 /openenv_pii_redaction_env.egg-info
+/.ruff_cache
+/.mypy_cache

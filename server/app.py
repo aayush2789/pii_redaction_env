@@ -40,13 +40,30 @@ except ImportError:
 from .pii_redaction_env_environment import RedactionEnvironment
 
 
-def create_redaction_environment() -> RedactionEnvironment:
+class ServerRedactionEnvironment(RedactionEnvironment):
+    """Server adapter: exposes observation-only step return for OpenEnv HTTP server."""
+
+    def step(self, action: RedactionAction) -> RedactionObservation:  # type: ignore[override]
+        observation, reward, done, info = super().step(action)
+        observation.done = done
+        observation.reward = reward.raw_total
+        observation.metadata = {
+            **(observation.metadata or {}),
+            "reward_total": reward.total,
+            "reward_raw_total": reward.raw_total,
+            "reward_components": reward.components,
+            "invalid_action": bool(info.get("invalid_action", False)),
+        }
+        return observation
+
+
+def create_redaction_environment() -> ServerRedactionEnvironment:
     """Factory function that creates RedactionEnvironment with config."""
 
     task_id = os.getenv("PII_TASK_ID")
     window_size = int(os.getenv("PII_WINDOW_SIZE", "500"))
     max_steps = int(os.getenv("PII_MAX_STEPS", "100"))
-    return RedactionEnvironment(
+    return ServerRedactionEnvironment(
         task_id=task_id,
         window_size=window_size,
         max_steps=max_steps,

@@ -1,66 +1,104 @@
 #!/usr/bin/env python3
-"""Competition inference script with strict structured logs."""
+"""PII Redaction inference script."""
 
 from __future__ import annotations
 
+import asyncio
 import json
-import logging
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from dotenv import load_dotenv
 from openai import OpenAI
 
 try:
-    from .server.pii_redaction_env_environment import RedactionEnvironment
+    from .client import RedactionEnv
     from .models import ActionType, RedactionAction
 except ImportError:
-    from server.pii_redaction_env_environment import RedactionEnvironment
+    from client import RedactionEnv
     from models import ActionType, RedactionAction
-from dotenv import load_dotenv
 
 load_dotenv()
 
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY")
-BENCHMARK = os.getenv("BENCHMARK") or "pii-redaction-env"
+# Configuration
+API_BASE_URL        = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME          = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+HF_TOKEN            = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY")
+IMAGE_NAME          = os.getenv("LOCAL_IMAGE_NAME")
+CONTAINER_BASE_URL  = os.getenv("CONTAINER_BASE_URL", "http://localhost:7860")
+USE_DOCKER_IMAGE    = os.getenv("USE_DOCKER_IMAGE", "0").strip().lower() in {"1", "true", "yes"}
+BENCHMARK           = os.getenv("BENCHMARK", "pii-redaction-env")
 
-TEMPERATURE = float(os.getenv("TEMPERATURE", "0.0"))
-OPENAI_SEED = int(os.getenv("OPENAI_SEED", "42"))
+TEMPERATURE         = float(os.getenv("TEMPERATURE", "0.0"))
+OPENAI_SEED         = int(os.getenv("OPENAI_SEED", "42"))
 INFERENCE_MAX_STEPS = int(os.getenv("INFERENCE_MAX_STEPS", "100"))
-REQUEST_TIMEOUT_S = float(os.getenv("REQUEST_TIMEOUT_S", "90"))
+REQUEST_TIMEOUT_S   = float(os.getenv("REQUEST_TIMEOUT_S", "90"))
+SUCCESS_SCORE_THRESHOLD = float(os.getenv("SUCCESS_SCORE_THRESHOLD", "0.5"))
 
 TASKS = ["gdpr_contract_easy", "hipaa_medical_medium", "security_logs_hard"]
 
-logger = logging.getLogger(__name__)
-
+# PII patterns
 LABEL_PATTERNS: Dict[str, List[str]] = {
     "EMAIL": [r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"],
     "PHONE": [
         r"\b(\+?1[\s\-.]?)?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}\b",
         r"\b\d{3}[-.]\d{4}\b",
     ],
-    "SSN": [r"\b\d{3}[-\s]\d{2}[-\s]\d{4}\b"],
-    "DOB": [
+    "SSN":  [r"\b\d{3}[-\s]\d{2}[-\s]\d{4}\b"],
+    "DOB":  [
         r"\b\d{4}-\d{2}-\d{2}\b",
         r"\b\d{2}/\d{2}/\d{4}\b",
         r"\b\d{2}-\d{2}-\d{4}\b",
     ],
-    "NAME": [],
+    "NAME":    [],
     "ADDRESS": [
-        r"\d+\s+[A-Za-z]+(?:\s+[A-Za-z]+){1,4}(?:\s+(?:St|Ave|Blvd|Rd|Dr|Ln|Way|Ct|Terrace|Court|Place|Drive|Road|Street|Lane|Boulevard|Avenue)\.?)*(?:,\s*(?:Apt|Suite|Unit|Floor|Fl)\.?\s*[\w-]+)?",
+        r"\d+\s+[A-Za-z]+(?:\s+[A-Za-z]+){1,4}"
+        r"(?:\s+(?:St|Ave|Blvd|Rd|Dr|Ln|Way|Ct|Terrace|Court|Place|"
+        r"Drive|Road|Street|Lane|Boulevard|Avenue)\.?)?"
+        r"(?:,\s*(?:Apt|Suite|Unit|Floor|Fl)\.?\s*[\w-]+)?",
     ],
 }
+PII_REGEX_PATTERNS = [p for patterns in LABEL_PATTERNS.values() for p in patterns]
 
-PII_REGEX_PATTERNS = [
-    pattern for patterns in LABEL_PATTERNS.values() for pattern in patterns
-]
+# Logging
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
 
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} "
+        f"done={str(done).lower()} error={error if error else 'null'}",
+        flush=True,
+    )
 
-def _is_gemma4_nvidia_model() -> bool:
-    return MODEL_NAME.strip().lower() == "google/gemma-4-31b-it"
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(
+        f"[END] success={str(success).lower()} steps={steps} "
+        f"score={score:.3f} rewards={rewards_str}",
+        flush=True,
+    )
 
+# Reward helpers
+def _clamp_reward(raw: float) -> float:
+    return round(max(0.0, min(1.0, (raw + 1.0) / 2.0)), 4)
+
+def _extract_reward(reward: Any) -> float:
+    if reward is None:
+        return 0.0
+    if hasattr(reward, "raw_total"):
+        return _clamp_reward(float(reward.raw_total))
+    if isinstance(reward, dict):
+        return _clamp_reward(float(reward.get("raw_total", reward.get("total", 0.0))))
+    if isinstance(reward, (int, float)):
+        return _clamp_reward(float(reward))
+    return 0.0
+
+# LLM helpers
+def _sanitize_api_key(value: Optional[str]) -> str:
+    token = (value or "").strip()
+    return token[7:].strip() if token.lower().startswith("bearer ") else token
 
 def _chat_completion_kwargs(prompt: str, use_json_mode: bool) -> Dict[str, Any]:
     kwargs: Dict[str, Any] = {
@@ -70,68 +108,11 @@ def _chat_completion_kwargs(prompt: str, use_json_mode: bool) -> Dict[str, Any]:
         "seed": OPENAI_SEED,
         "timeout": REQUEST_TIMEOUT_S,
     }
-
-    if _is_gemma4_nvidia_model():
-        kwargs["max_tokens"] = int(os.getenv("MAX_TOKENS", "512"))
-        kwargs["top_p"] = float(os.getenv("TOP_P", "0.95"))
-        kwargs["temperature"] = float(os.getenv("TEMPERATURE", "0"))
-        enable_thinking = os.getenv("ENABLE_THINKING", "0") in {"1", "true", "True"}
-        kwargs["extra_body"] = {
-            "chat_template_kwargs": {
-                "enable_thinking": enable_thinking,
-            }
-        }
-    elif use_json_mode:
+    if use_json_mode:
         kwargs["response_format"] = {"type": "json_object"}
-
     return kwargs
 
-
-def _sanitize_api_key(value: Optional[str]) -> str:
-    token = (value or "").strip()
-    if token.lower().startswith("bearer "):
-        token = token[7:].strip()
-    return token
-
-
-def _is_server_error(message: str) -> bool:
-    low = message.lower()
-    return "500" in low or "internal server error" in low or "enginecore" in low
-
-
-def _is_timeout_error(message: str) -> bool:
-    low = message.lower()
-    return "timeout" in low or "timed out" in low or "read timeout" in low
-
-
-def log_start(task: str, env: str, model: str) -> None:
-    print(f"[START] task={task} env={env} model={model}", flush=True)
-
-
-def log_step(
-    step: int, action: str, reward: float, done: bool, error: Optional[str]
-) -> None:
-    done_val = str(done).lower()
-    error_val = error if error else "null"
-    print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
-        flush=True,
-    )
-
-
-def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(
-        f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}",
-        flush=True,
-    )
-
-
-def _clamp_reward(raw_reward: float) -> float:
-    """Clamp raw reward from [-1, 1] into [0, 1] for competition logs."""
-    return round(max(0.0, min(1.0, (raw_reward + 1.0) / 2.0)), 4)
-
-
+# Prompt
 def _build_prompt(obs) -> str:
     return f"""
 You are a GDPR/HIPAA compliance analyst performing PII redaction on a document.
@@ -150,26 +131,21 @@ Label guidance:
   patient, customer, contractor, tenant, applicant, owner, user, caller, she,
   he, her, and his. Redact the NAME before associated contact details.
 
-IMPORTANT — Obfuscated PII patterns to watch for:
+IMPORTANT - Obfuscated PII patterns to watch for:
 - Emails: "john dot smith at gmail dot com", "j_doe at mail dot net"
 - Phones: "five five five-0199", "area code four-one-five then 555-0187"
 - SSNs: "three four five dash six seven dash eight nine zero one"
 - DOBs: "nineteen eighty-five march twelve", "oh-three slash fifteen slash seventy-eight"
 
-IMPORTANT — Span boundaries for obfuscated PII:
+IMPORTANT - Span boundaries for obfuscated PII:
 When PII is written out in words, the span MUST start at the FIRST word of the
-obfuscated phrase and end at the LAST character of the value, including all
-written-out connectors. Do NOT start the span at the first digit.
+obfuscated phrase and end at the LAST character, including all written-out connectors.
 
 WRONG: "area code four-one-five, then 555-0187" -> start at "555"
 RIGHT: "area code four-one-five, then 555-0187" -> start at "area"
 
-WRONG: "john dot smith at gmail dot com" -> start at "smith"
-RIGHT: "john dot smith at gmail dot com" -> start at "john"
-
 DO NOT REDACT: Company names (Apple, Google, Amazon, Microsoft, Samsung, Meta),
-product codes, project codenames (Falcon, Orion), infrastructure terms, or
-organizational references. Only redact personal identifiers.
+product codes, project codenames, infrastructure terms, or organizational references.
 
 Current window (chars {obs.cursor_position}-{obs.cursor_position + len(obs.visible_text)}):
 ---
@@ -178,18 +154,11 @@ Current window (chars {obs.cursor_position}-{obs.cursor_position + len(obs.visib
 Progress: {obs.progress_pct:.0%} | Already redacted: {obs.redacted_spans}
 Previous actions: {obs.previous_actions}
 
-Worked example for absolute indexing:
-1. cursor_position = 50
-2. visible_text = "Patient John Smith lived"
-3. The word "John" starts at relative offset 8 in visible_text
-4. absolute_start = 50 + 8 = 58
-5. If "John" is the target span, its absolute indices are start=58 and end=62
+Worked example: cursor_position=50, visible_text="Patient John Smith lived"
+  "John" is at relative offset 8 -> absolute_start=58, absolute_end=62
 
-ADDRESS example:
-1. visible_text = "...resides at 90 Birchwood Lane. Patient..."
-2. cursor_position = 0
-3. The address starts at "90" and ends after "Lane".
-4. Count from the first digit of the street number and stop before punctuation.
+ADDRESS example: visible_text="resides at 90 Birchwood Lane."
+  Start at "90", end after "Lane", stop before punctuation.
 
 Return strict JSON only, one of:
 {{"action": "REDACT", "start": <abs_start>, "end": <abs_end>, "label": "<PII_TYPE>"}}
@@ -198,305 +167,227 @@ Return strict JSON only, one of:
 {{"action": "FINISH"}}
 
 Rules:
-- REDACT: mark one PII span using absolute offsets and always include its label.
-  Formula: absolute_index = cursor_position + relative_offset_in_visible_text.
-- Example: if cursor_position=50, visible_text="Patient John Smith lived", and "John" starts at relative offset 8,
-    then absolute_start = 50 + 8 = 58 and absolute_end = 62.
-- Use the label guidance above when choosing REDACT labels; wrong labels are penalized.
-- NEXT_CHUNK: advance to next unseen section. Use after all PII in current window is handled.
-- SKIP: no PII found in current window, equivalent to acknowledging and waiting.
-- FINISH: only when ALL of the following are true:
-    1. progress_pct >= 1.0 (you have scrolled through the entire document), AND
-    2. remaining_entities == 0 in the last reward signal, AND
-    3. You have explicitly looked for every PII type: NAME, DOB, EMAIL, PHONE, SSN, ADDRESS.
-    Do NOT call FINISH just because no new PII is visible in the current window.
-- Do NOT re-redact spans that appear in already_redacted — move forward instead.
+- REDACT: one PII span, absolute offsets, always include label.
+- NEXT_CHUNK: after all PII in current window is handled.
+- SKIP: no PII in current window.
+- FINISH: only when progress_pct >= 1.0 AND all PII types have been checked.
+- Do NOT re-redact already_redacted spans.
 - Prefer tight, precise spans over broad ones.
-- If uncertain whether something is PII, use NEXT_CHUNK for more context.
 """.strip()
 
-
+# Action parsing
 def _action_to_string(action: RedactionAction) -> str:
     if action.action_type == ActionType.REDACT:
         return f"REDACT({action.start},{action.end})"
     return action.action_type.value
 
-
 def _label_from_text(text: str) -> str:
-    candidate = (text or "").strip()
-    if re.fullmatch(LABEL_PATTERNS["EMAIL"][0], candidate, flags=re.IGNORECASE):
-        return "EMAIL"
-    if re.fullmatch(LABEL_PATTERNS["SSN"][0], candidate, flags=re.IGNORECASE):
-        return "SSN"
-    if re.fullmatch(LABEL_PATTERNS["PHONE"][0], candidate, flags=re.IGNORECASE):
-        return "PHONE"
-    if re.fullmatch(LABEL_PATTERNS["DOB"][0], candidate, flags=re.IGNORECASE):
-        return "DOB"
+    c = (text or "").strip()
+    if re.fullmatch(LABEL_PATTERNS["EMAIL"][0], c, flags=re.IGNORECASE): return "EMAIL"
+    if re.fullmatch(LABEL_PATTERNS["SSN"][0],   c, flags=re.IGNORECASE): return "SSN"
+    if re.fullmatch(LABEL_PATTERNS["PHONE"][0], c, flags=re.IGNORECASE): return "PHONE"
+    if re.fullmatch(LABEL_PATTERNS["DOB"][0],   c, flags=re.IGNORECASE): return "DOB"
     return "NAME"
 
-
-def _coerce_action(
-    payload: Dict[str, Any], obs
-) -> Tuple[RedactionAction, Optional[str]]:
-    if "action_type" not in payload and "action" in payload:
-        payload = {**payload, "action_type": payload["action"]}
-    if "action_type" not in payload:
-        return RedactionAction(action_type=ActionType.NEXT_CHUNK), "missing_action_type"
-
-    action_value = str(payload.get("action_type", "")).upper()
-    if action_value == ActionType.REDACT.value:
-        try:
-            raw_start = int(payload.get("start"))
-            raw_end = int(payload.get("end"))
-            label_value = payload.get("label")
-            snapped_start, snapped_end = _snap_redact_span(
-                obs,
-                raw_start,
-                raw_end,
-                label=str(label_value) if label_value else None,
-            )
-            if not label_value:
-                rel_start = max(0, snapped_start - int(obs.cursor_position))
-                rel_end = max(rel_start + 1, snapped_end - int(obs.cursor_position))
-                label_value = _label_from_text(
-                    (obs.visible_text or "")[rel_start:rel_end]
-                )
-            payload = {
-                **payload,
-                "label": label_value,
-                "start": snapped_start,
-                "end": snapped_end,
-            }
-        except Exception:
-            pass
-
-    try:
-        return RedactionAction(**payload), None
-    except Exception as exc:
-        return RedactionAction(action_type=ActionType.NEXT_CHUNK), str(exc)
-
-
-def _snap_redact_span(
-    obs, raw_start: int, raw_end: int, label: Optional[str] = None
-) -> Tuple[int, int]:
+def _snap_redact_span(obs, raw_start: int, raw_end: int, label: Optional[str] = None) -> Tuple[int, int]:
     text = obs.visible_text or ""
     if not text:
         return raw_start, raw_end
-
     patterns = LABEL_PATTERNS.get(label, []) if label else []
     if not patterns:
         patterns = PII_REGEX_PATTERNS
-
     window_start = int(obs.cursor_position)
-    window_end = window_start + len(text)
-
-    rel_start = raw_start - window_start
-    rel_end = raw_end - window_start
-
-    scan_left = max(0, min(rel_start, rel_end) - 20)
-    scan_right = min(len(text), max(rel_start, rel_end) + 20)
+    window_end   = window_start + len(text)
+    rel_start    = raw_start - window_start
+    rel_end      = raw_end   - window_start
+    scan_left    = max(0, min(rel_start, rel_end) - 20)
+    scan_right   = min(len(text), max(rel_start, rel_end) + 20)
     if scan_right <= scan_left:
         return raw_start, raw_end
-
-    scan_text = text[scan_left:scan_right]
-    start_candidates: List[int] = []
-    end_candidates: List[int] = []
-
-    for pattern in patterns:
-        for match in re.finditer(pattern, scan_text, flags=re.IGNORECASE):
-            start_candidates.append(window_start + scan_left + match.start())
-            end_candidates.append(window_start + scan_left + match.end())
-
-    snapped_start = raw_start
-    snapped_end = raw_end
-
-    if start_candidates:
-        snapped_start = min(
-            start_candidates, key=lambda candidate: abs(candidate - raw_start)
-        )
-    if end_candidates:
-        snapped_end = min(
-            end_candidates, key=lambda candidate: abs(candidate - raw_end)
-        )
-
-    # Keep span sane and inside the document bounds.
-    snapped_start = max(0, min(snapped_start, window_end - 1))
-    snapped_end = max(snapped_start + 1, min(snapped_end, window_end))
-
-    return snapped_start, snapped_end
-
+    scan_text    = text[scan_left:scan_right]
+    sc, ec       = [], []
+    for p in patterns:
+        for m in re.finditer(p, scan_text, flags=re.IGNORECASE):
+            sc.append(window_start + scan_left + m.start())
+            ec.append(window_start + scan_left + m.end())
+    ss = min(sc, key=lambda c: abs(c - raw_start)) if sc else raw_start
+    se = min(ec, key=lambda c: abs(c - raw_end))   if ec else raw_end
+    ss = max(0, min(ss, window_end - 1))
+    se = max(ss + 1, min(se, window_end))
+    return ss, se
 
 def _extract_json_object(text: str) -> Optional[str]:
-    candidate = (text or "").strip()
-    if not candidate:
+    c = (text or "").strip()
+    if not c:
         return None
-
-    # Handle fenced markdown blocks.
-    if candidate.startswith("```"):
-        candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
-        candidate = re.sub(r"\s*```$", "", candidate, flags=re.IGNORECASE)
-        candidate = candidate.strip()
-
-    # Fast path if already a JSON object.
-    if candidate.startswith("{") and candidate.endswith("}"):
-        return candidate
-
-    # Extract first balanced {...} block from verbose output.
-    start = candidate.find("{")
+    if c.startswith("```"):
+        c = re.sub(r"^```(?:json)?\s*", "", c, flags=re.IGNORECASE)
+        c = re.sub(r"\s*```$",          "", c, flags=re.IGNORECASE)
+        c = c.strip()
+    if c.startswith("{") and c.endswith("}"):
+        return c
+    start = c.find("{")
     if start == -1:
         return None
-
     depth = 0
-    for idx in range(start, len(candidate)):
-        ch = candidate[idx]
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
+    for i in range(start, len(c)):
+        if c[i] == "{": depth += 1
+        elif c[i] == "}":
             depth -= 1
             if depth == 0:
-                return candidate[start : idx + 1]
+                return c[start: i + 1]
     return None
 
-
-def _parse_action_payload(
-    raw_text: str,
-) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def _parse_action_payload(raw_text: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     json_text = _extract_json_object(raw_text)
     if not json_text:
         return None, "no_json_object"
     try:
         payload = json.loads(json_text)
-        if not isinstance(payload, dict):
-            return None, "json_not_object"
-        return payload, None
+        return (payload, None) if isinstance(payload, dict) else (None, "json_not_object")
     except Exception as exc:
         return None, str(exc)
 
+def _coerce_action(payload: Dict[str, Any], obs) -> Tuple[RedactionAction, Optional[str]]:
+    if "action_type" not in payload and "action" in payload:
+        payload = {**payload, "action_type": payload["action"]}
+    if "action_type" not in payload:
+        return RedactionAction(action_type=ActionType.NEXT_CHUNK), "missing_action_type"
+    if str(payload.get("action_type", "")).upper() == ActionType.REDACT.value:
+        try:
+            raw_start   = int(payload.get("start"))
+            raw_end     = int(payload.get("end"))
+            label_value = payload.get("label")
+            ss, se = _snap_redact_span(obs, raw_start, raw_end, label=str(label_value) if label_value else None)
+            if not label_value:
+                rs = max(0, ss - int(obs.cursor_position))
+                re_ = max(rs + 1, se - int(obs.cursor_position))
+                label_value = _label_from_text((obs.visible_text or "")[rs:re_])
+            payload = {**payload, "label": label_value, "start": ss, "end": se}
+        except Exception:
+            pass
+    try:
+        return RedactionAction(**payload), None
+    except Exception as exc:
+        return RedactionAction(action_type=ActionType.NEXT_CHUNK), str(exc)
 
-def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
-    trailing_next_chunks = 0
-    for previous_action in reversed(obs.previous_actions or []):
-        if previous_action == "NEXT_CHUNK":
-            trailing_next_chunks += 1
-        else:
-            break
-
-    if trailing_next_chunks >= 3 and obs.cursor_position >= obs.document_length - len(
-        obs.visible_text
-    ):
+async def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
+    # Auto-finish if cursor is stuck at end
+    trailing = 0
+    for a in reversed(obs.previous_actions or []):
+        if a == "NEXT_CHUNK": trailing += 1
+        else: break
+    if trailing >= 3 and obs.cursor_position >= obs.document_length - len(obs.visible_text):
         return RedactionAction(action_type=ActionType.FINISH), "cursor_clamped"
 
     prompt = _build_prompt(obs)
 
-    # First attempt with strict JSON mode.
     try:
-        response = client.chat.completions.create(
-            **_chat_completion_kwargs(prompt, use_json_mode=True)
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
+            **_chat_completion_kwargs(prompt, use_json_mode=True),
         )
         text = response.choices[0].message.content or ""
         payload, parse_error = _parse_action_payload(text)
         if payload is None:
-            logger.warning("Model response parse failed in JSON mode: %s", parse_error)
-            return RedactionAction(action_type=ActionType.NEXT_CHUNK), parse_error
+            return RedactionAction(action_type=ActionType.NEXT_CHUNK), f"parse_error:{parse_error}"
         return _coerce_action(payload, obs)
     except Exception as exc:
         msg = str(exc)
-        logger.exception("LLM request failed in JSON mode")
-        if _is_server_error(msg):
-            # Retry once without response_format for providers that fail on JSON mode.
+        msg_low = msg.lower()
+        retry = "500" in msg or "internal server error" in msg_low or "timeout" in msg_low or "timed out" in msg_low
+        if retry:
             try:
-                response = client.chat.completions.create(
-                    **_chat_completion_kwargs(prompt, use_json_mode=False)
+                response = await asyncio.to_thread(
+                    client.chat.completions.create,
+                    **_chat_completion_kwargs(prompt, use_json_mode=False),
                 )
                 text = response.choices[0].message.content or ""
                 payload, parse_error = _parse_action_payload(text)
                 if payload is None:
-                    logger.warning(
-                        "Model response parse failed without JSON mode: %s", parse_error
-                    )
-                    return RedactionAction(
-                        action_type=ActionType.NEXT_CHUNK
-                    ), parse_error
+                    return RedactionAction(action_type=ActionType.NEXT_CHUNK), f"retry_parse_error:{parse_error}"
                 return _coerce_action(payload, obs)
             except Exception as retry_exc:
-                retry_msg = str(retry_exc)
-                logger.exception("Retry without JSON mode failed")
-                return RedactionAction(action_type=ActionType.NEXT_CHUNK), retry_msg
-        if _is_timeout_error(msg):
-            # Retry once without JSON mode to reduce parse overhead.
-            try:
-                response = client.chat.completions.create(
-                    **_chat_completion_kwargs(prompt, use_json_mode=False)
-                )
-                text = response.choices[0].message.content or ""
-                payload, parse_error = _parse_action_payload(text)
-                if payload is not None:
-                    return _coerce_action(payload, obs)
-                logger.warning(
-                    "Model response parse failed after timeout retry: %s", parse_error
-                )
-            except Exception:
-                logger.exception("Timeout retry without JSON mode failed")
-        return RedactionAction(action_type=ActionType.NEXT_CHUNK), msg
+                raise RuntimeError(str(retry_exc)) from retry_exc
+        raise
 
-
-def run_task(client: OpenAI, task_id: str) -> None:
-    env = RedactionEnvironment(task_id=task_id)
+# Task runner
+async def run_task(client: OpenAI, task_id: str, env: RedactionEnv) -> None:
     rewards: List[float] = []
-    steps = 0
+    steps   = 0
+    score   = 0.0
     success = False
-    score = 0.0
 
     log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        obs = env.reset()
+        obs = (await env.reset(task_id=task_id)).observation
+
         for step in range(1, INFERENCE_MAX_STEPS + 1):
             if obs.done:
                 break
 
-            action, action_error = _next_action(client, obs)
-            action_str = _action_to_string(action)
+            action_error: Optional[str] = None
+            try:
+                action, action_error = await _next_action(client, obs)
+            except Exception as exc:
+                log_step(step=step, action="ERROR", reward=0.0, done=True, error=str(exc))
+                steps = step
+                break
 
-            obs, reward, done, info = env.step(action)
+            result = await env.step(action)
+            obs    = result.observation
+            done   = bool(result.done)
+
+            clamped = _extract_reward(result.reward)
+            if result.reward is None:
+                clamped = _extract_reward(getattr(obs, "reward", None))
+                if clamped == 0.0:
+                    obs_meta = getattr(obs, "metadata", {}) or {}
+                    clamped = _extract_reward(obs_meta.get("reward_raw_total"))
+            rewards.append(clamped)
             steps = step
-            clamped_reward = _clamp_reward(reward.raw_total)
-            rewards.append(clamped_reward)
 
-            error_value: Optional[str] = action_error
-            if info.get("invalid_action"):
-                error_value = "invalid_action"
-
-            log_step(
-                step=step,
-                action=action_str,
-                reward=clamped_reward,
-                done=done,
-                error=error_value,
-            )
+            log_step(step=step, action=_action_to_string(action), reward=clamped, done=done, error=action_error)
 
             if done:
                 break
 
-        grade = env.grade()
-        score = max(0.0, min(1.0, float(grade.score)))
-        success = bool(grade.success)
-    except Exception:
-        logger.exception("Task execution failed for %s", task_id)
+        score = max(0.0, min(1.0, (sum(rewards) / len(rewards)) if rewards else 0.0))
+        success = bool(score >= SUCCESS_SCORE_THRESHOLD)
+
+    except Exception as exc:
+        print(f"[DEBUG] run_task error: {exc}", flush=True)
         success = False
+
     finally:
         log_end(success=success, steps=steps, score=score, rewards=rewards)
 
-
-def main() -> None:
+# Entry point
+async def main() -> None:
     resolved_token = _sanitize_api_key(HF_TOKEN)
     if not resolved_token:
         raise RuntimeError("HF_TOKEN (or OPENAI_API_KEY) is required.")
 
     client = OpenAI(base_url=API_BASE_URL, api_key=resolved_token)
-    for task_id in TASKS:
-        run_task(client, task_id)
+
+    # Default mode: connect to already-running env endpoint (avoids spawning duplicate containers).
+    # Opt-in image mode: set USE_DOCKER_IMAGE=1 and LOCAL_IMAGE_NAME=<image>.
+    if USE_DOCKER_IMAGE:
+        if not IMAGE_NAME:
+            raise RuntimeError("USE_DOCKER_IMAGE=1 requires LOCAL_IMAGE_NAME to be set.")
+        env = await RedactionEnv.from_docker_image(IMAGE_NAME)
+        async with env:
+            for task_id in TASKS:
+                await run_task(client, task_id, env)
+    else:
+        for task_id in TASKS:
+            try:
+                async with RedactionEnv(base_url=CONTAINER_BASE_URL) as env:
+                    await run_task(client, task_id, env)
+            except Exception as exc:
+                print(f"[DEBUG] env error on task {task_id}: {exc}", flush=True)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
