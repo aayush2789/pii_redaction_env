@@ -1,5 +1,5 @@
-from server.pii_redaction_env_environment import RedactionEnvironment
-from models import ActionType, RedactionAction
+from pii_redaction_env.server.pii_redaction_env_environment import RedactionEnvironment
+from pii_redaction_env.models import ActionType, RedactionAction
 
 
 def test_reset_returns_valid_observation():

@@ -1,6 +1,6 @@
-from server.graders import compute_grade
-from models import PIIEntity
-from server.tasks import TASKS
+from pii_redaction_env.server.graders import compute_grade
+from pii_redaction_env.models import PIIEntity
+from pii_redaction_env.server.tasks import TASKS
 
 
 def test_compute_grade_matches_expected_f1():
