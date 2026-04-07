@@ -501,11 +501,11 @@ async def main() -> None:
         max_retries=OPENAI_MAX_RETRIES,
     )
 
-    _write_log(
-        "[CONFIG] "
-        f"api_base={API_BASE_URL} model={MODEL_NAME} timeout_s={REQUEST_TIMEOUT_S} "
-        f"sdk_retries={OPENAI_MAX_RETRIES} retry_on_transient={str(RETRY_ON_TRANSIENT_ERRORS).lower()}"
-    )
+    # _write_log(
+    #     "[CONFIG] "
+    #     f"api_base={API_BASE_URL} model={MODEL_NAME} timeout_s={REQUEST_TIMEOUT_S} "
+    #     f"sdk_retries={OPENAI_MAX_RETRIES} retry_on_transient={str(RETRY_ON_TRANSIENT_ERRORS).lower()}"
+    # )
 
     # Default mode: connect to already-running env endpoint (avoids spawning duplicate containers).
     # Opt-in image mode: set USE_DOCKER_IMAGE=1 and LOCAL_IMAGE_NAME=<image>.
@@ -519,6 +519,7 @@ async def main() -> None:
             for task_id in TASKS:
                 await run_task(client, task_id, env)
     else:
+        # connect to already running env
         for task_id in TASKS:
             try:
                 async with RedactionEnv(base_url=CONTAINER_BASE_URL) as env:
