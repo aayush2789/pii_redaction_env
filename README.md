@@ -238,6 +238,24 @@ flowchart LR
 
 ---
 
+---
+
+## OpenEnv Integration
+
+This project is built using the **OpenEnv** framework, providing a standardized interface for research-grade environments.
+
+### Core Components
+- **`RedactionEnvironment`**: The server-side logic in [server/pii_redaction_env_environment.py](file:///c:/CodingNest/pii_redaction_env/server/pii_redaction_env_environment.py) inherits from `openenv.core.Environment`. This handles the `reset`, `step`, and `grade` API calls.
+- **`openenv.yaml`**: The configuration file that defines the environment's metadata, entry point, and Hugging Face Space settings.
+
+### CLI & Library Usage
+- **`openenv validate`**: Used to verify that the environment and its associated `Dockerfile` are compliant with the OpenEnv specification. This is run as part of the [pre_val.sh](file:///c:/CodingNest/pii_redaction_env/pre_val.sh) script.
+- **`openenv push`**: Packages the current directory and deploys it to Hugging Face as a Docker-based Space.
+- **`openenv fork`**: Used to create local copies of existing environments for research and development.
+- **`openenv-core`**: The Python library used by both the environment server (for definitions) and [client.py](file:///c:/CodingNest/pii_redaction_env/client.py) (for managing connections and Docker lifecycle).
+
+---
+
 ## Setup and Run
 
 Install:

@@ -47,7 +47,11 @@ RETRY_ON_TRANSIENT_ERRORS = os.getenv(
     "RETRY_ON_TRANSIENT_ERRORS", "0"
 ).strip().lower() in {"1", "true", "yes"}
 
-TASKS = ["gdpr_contract_easy", "hipaa_medical_medium", "security_logs_hard"]
+PII_TASK_ID_OVERRIDE = os.getenv("PII_TASK_ID")
+if PII_TASK_ID_OVERRIDE:
+    TASKS = [PII_TASK_ID_OVERRIDE]
+else:
+    TASKS = ["gdpr_contract_easy", "hipaa_medical_medium", "security_logs_hard"]
 
 # Setup outputs directory and logging
 OUTPUT_DIR = Path("outputs")
