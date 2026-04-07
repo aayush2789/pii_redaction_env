@@ -189,35 +189,17 @@ def test_navigation_reward_is_pbrs_only():
     assert "progress_bonus" not in prev_reward.components
 
 
-def test_finish_bonus_removed_from_base_reward():
+def test_finish_bonus_awarded_when_no_remaining_entities():
     env = RedactionEnvironment(task_id="gdpr_contract_easy")
     env.reset(seed=0)
 
-    entity = env.ground_truth[0]
-    label = entity.label.lower()
-    justification_map = {
-        "email": "email field",
-        "phone": "phone number",
-        "name": "person name",
-        "address": "address field",
-        "dob": "date of birth",
-        "ssn": "social security",
-    }
-    env.step(
-        RedactionAction(
-            action_type=ActionType.REDACT,
-            start=entity.start,
-            end=entity.end,
-            label=entity.label,
-            confidence=0.9,
-            justification=justification_map.get(label, label),
-        )
-    )
+    # Simulate fully detected state.
+    env._cached_fn = 0
 
     _, reward, done, _ = env.step(RedactionAction(action_type=ActionType.FINISH))
 
     assert done is True
-    assert "finish_bonus" not in reward.components
+    assert reward.components.get("finish_bonus", 0.0) == 1.0
 
 
 def test_duplicate_redaction_escalating_penalty():
@@ -329,13 +311,39 @@ def test_duplicate_redaction_is_invalid_and_not_duplicated():
     assert len(env.detected_entities) == 1
 
 
-def test_finish_bonus_component_absent_without_prior_redactions():
+def test_finish_bonus_not_awarded_when_entities_remain():
     env = RedactionEnvironment(task_id="gdpr_contract_easy")
     env.reset(seed=0)
 
     _, reward, _, _ = env.step(RedactionAction(action_type=ActionType.FINISH))
 
-    assert "finish_bonus" not in reward.components
+    assert reward.components.get("finish_bonus", 0.0) == 0.0
+
+
+def test_next_chunk_penalizes_visible_missed_entities():
+    env = RedactionEnvironment(task_id="gdpr_contract_easy", window_size=200)
+    env.reset(seed=0)
+
+    visible_missed = env._count_visible_missed_entities()
+    assert visible_missed >= 1
+
+    _, reward, _, _ = env.step(RedactionAction(action_type=ActionType.NEXT_CHUNK))
+
+    assert reward.components.get("miss_penalty", 0.0) == round(-0.1 * visible_missed, 4)
+    assert reward.components.get("exploration_reward", 0.0) == 0.0
+
+
+def test_next_chunk_exploration_reward_when_no_visible_missed_entities():
+    env = RedactionEnvironment(task_id="gdpr_contract_easy", window_size=200)
+    env.reset(seed=0)
+
+    # Simulate state where all GT entities are already matched.
+    env._matched_gt_indices = set(range(len(env.ground_truth)))
+
+    _, reward, _, _ = env.step(RedactionAction(action_type=ActionType.NEXT_CHUNK))
+
+    assert reward.components.get("miss_penalty", 0.0) == 0.0
+    assert reward.components.get("exploration_reward", 0.0) == 0.02
 
 
 def test_best_label_falls_back_to_regex_heuristic():

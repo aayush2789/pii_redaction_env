@@ -124,6 +124,10 @@ class RedactionEnvironment(Environment):
 
         old_potential = self._calculate_potential()
         invalid_action = False
+        visible_missed_before_next = 0
+
+        if action.action_type == ActionType.NEXT_CHUNK:
+            visible_missed_before_next = self._count_visible_missed_entities()
 
         self.step_count += 1
         self._state.step_count = self.step_count
@@ -176,7 +180,10 @@ class RedactionEnvironment(Environment):
             self.done = True
 
         reward = self.compute_reward(
-            action, old_potential, invalid_action=invalid_action
+            action,
+            old_potential,
+            invalid_action=invalid_action,
+            visible_missed_before_next=visible_missed_before_next,
         )
 
         observation = self._build_observation()
@@ -220,7 +227,7 @@ class RedactionEnvironment(Environment):
     def _calculate_potential(self) -> float:
         """
         Calculate the Potential Function Phi(s) based on the current grading metric.
-        Phi(s) = 0.55 * F1 + 0.15 * LabelAccuracy + 0.30 * Utility
+        Phi(s) = 0.50 * F1 + 0.25 * LabelAccuracy + 0.25 * Utility
         """
         if self.current_doc is None:
             return 0.0
@@ -248,13 +255,27 @@ class RedactionEnvironment(Environment):
 
         doc_len = len(self.current_doc["text"])
         over_redaction_ratio = (self.total_redacted_chars / doc_len) if doc_len else 0.0
-        if over_redaction_ratio > 0.25:
-            utility_score = max(0.0, 1 - 2 * (over_redaction_ratio - 0.25))
-        else:
-            utility_score = 1.0
+        utility_score = max(0.0, 1.0 - over_redaction_ratio)
 
-        utility_weight = 0.30
-        return (0.55 * f1) + (0.15 * label_accuracy) + (utility_weight * utility_score)
+        return (0.50 * f1) + (0.25 * label_accuracy) + (0.25 * utility_score)
+
+    def _count_visible_missed_entities(self) -> int:
+        """Count unmatched ground-truth entities overlapping the current visible window."""
+        if self.current_doc is None:
+            return 0
+
+        window_start = self.cursor
+        window_end = min(len(self.current_doc["text"]), self.cursor + self.window_size)
+        visible_missed = 0
+
+        for idx, gt in enumerate(self.ground_truth):
+            if idx in self._matched_gt_indices:
+                continue
+            overlaps_window = gt.start < window_end and gt.end > window_start
+            if overlaps_window:
+                visible_missed += 1
+
+        return visible_missed
 
     @property
     def state(self) -> State:
@@ -278,6 +299,7 @@ class RedactionEnvironment(Environment):
         action: RedactionAction,
         old_potential: float,
         invalid_action: bool = False,
+        visible_missed_before_next: int = 0,
     ) -> RedactionReward:
         components: Dict[str, float] = {}
 
@@ -293,6 +315,9 @@ class RedactionEnvironment(Environment):
         fp_penalty = 0.0
         duplicate_penalty = 0.0
         invalid_penalty = -1.0 if invalid_action else 0.0
+        miss_penalty = 0.0
+        exploration_reward = 0.0
+        finish_bonus = 0.0
 
         is_span_action = (
             action.action_type == ActionType.REDACT
@@ -324,10 +349,23 @@ class RedactionEnvironment(Environment):
             else:
                 fp_penalty = -0.2 * (1 - best_iou)
 
+        if action.action_type == ActionType.NEXT_CHUNK:
+            visible_missed = visible_missed_before_next
+            if visible_missed > 0:
+                miss_penalty = -0.1 * visible_missed
+            else:
+                exploration_reward = 0.02
+
+        if action.action_type == ActionType.FINISH and self._cached_fn == 0:
+            finish_bonus = 1.0
+
         components["tp_bonus"] = round(tp_bonus, 4)
         components["fp_penalty"] = round(fp_penalty, 4)
         components["duplicate_penalty"] = round(duplicate_penalty, 4)
         components["invalid_penalty"] = round(invalid_penalty, 4)
+        components["miss_penalty"] = round(miss_penalty, 4)
+        components["exploration_reward"] = round(exploration_reward, 4)
+        components["finish_bonus"] = round(finish_bonus, 4)
 
         raw_total = round(
             shaping_reward
@@ -335,6 +373,13 @@ class RedactionEnvironment(Environment):
             + fp_penalty
             + duplicate_penalty
             + invalid_penalty,
+            4,
+        )
+        raw_total = round(
+            raw_total
+            + miss_penalty
+            + exploration_reward
+            + finish_bonus,
             4,
         )
         # Unormalized total reward is used for grading and analysis, while the shaping component can be scaled if needed.

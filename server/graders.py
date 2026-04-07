@@ -69,13 +69,10 @@ def compute_grade(
     over_redaction_ratio = (
         (total_redacted_chars / document_length) if document_length else 0.0
     )
-    if over_redaction_ratio > 0.25:
-        utility_score = max(0.0, 1 - 2 * (over_redaction_ratio - 0.25))
-    else:
-        utility_score = 1.0
+    utility_score = max(0.0, 1.0 - over_redaction_ratio)
 
-    # Weighted score: 55% span detection, 15% label accuracy, 30% utility
-    score = max(0.0, min(1.0, 0.55 * f1 + 0.15 * label_accuracy + 0.30 * utility_score))
+    # Weighted score: 50% span detection, 25% label accuracy, 25% utility
+    score = max(0.0, min(1.0, 0.50 * f1 + 0.25 * label_accuracy + 0.25 * utility_score))
     success = score >= success_threshold
 
     components: Dict[str, float] = {

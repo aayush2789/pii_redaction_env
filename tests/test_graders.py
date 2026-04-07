@@ -11,7 +11,7 @@ def test_compute_grade_matches_expected_f1():
         detected=detected,
         ground_truth=gt,
         document_length=100,
-        total_redacted_chars=18,
+        total_redacted_chars=0,
         task_id="gdpr_contract_easy",
         success_threshold=0.9,
     )
@@ -85,5 +85,6 @@ def test_compute_grade_label_accuracy():
     assert grade.components["label_correct"] == 1.0
     assert grade.components["label_total"] == 2.0
     assert grade.label_accuracy == 0.5
-    # Since utility = 1.0 (25/100 <= 0.25): 0.55*1.0 + 0.15*0.5 + 0.30*1.0 = 0.55 + 0.075 + 0.30 = 0.925
-    assert grade.score == 0.925
+    # Utility = 1 - (25/100) = 0.75 with new weighted score:
+    # 0.50*1.0 + 0.25*0.5 + 0.25*0.75 = 0.8125
+    assert grade.score == 0.8125
