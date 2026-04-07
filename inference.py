@@ -41,7 +41,12 @@ TEMPERATURE = float(os.getenv("TEMPERATURE", "0.0"))
 OPENAI_SEED = int(os.getenv("OPENAI_SEED", "42"))
 INFERENCE_MAX_STEPS = int(os.getenv("INFERENCE_MAX_STEPS", "100"))
 REQUEST_TIMEOUT_S = float(os.getenv("REQUEST_TIMEOUT_S", "30"))
-SUCCESS_SCORE_THRESHOLD = float(os.getenv("SUCCESS_SCORE_THRESHOLD", "0.5"))
+# Task-specific success thresholds
+TASK_THRESHOLDS = {
+    "gdpr_contract_easy": 0.90,
+    "hipaa_medical_medium": 0.85,
+    "security_logs_hard": 0.75,
+}
 OPENAI_MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", "0"))
 RETRY_ON_TRANSIENT_ERRORS = os.getenv(
     "RETRY_ON_TRANSIENT_ERRORS", "0"
@@ -445,7 +450,7 @@ async def run_task(client: OpenAI, task_id: str, env: RedactionEnv) -> None:
                 break
 
         score = max(0.0, min(1.0, (sum(rewards) / len(rewards)) if rewards else 0.0))
-        success = bool(score >= SUCCESS_SCORE_THRESHOLD)
+        success = bool(score >= TASK_THRESHOLDS.get(task_id, 0.5))
 
     except Exception as exc:
         print(f"[DEBUG] run_task error: {exc}", flush=True)
