@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PII Redaction inference script."""
+"""PII Redaction inference script with logging and timing."""
 
 from __future__ import annotations
 
@@ -7,6 +7,9 @@ import asyncio
 import json
 import os
 import re
+import time
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
@@ -42,6 +45,17 @@ SUCCESS_SCORE_THRESHOLD = float(os.getenv("SUCCESS_SCORE_THRESHOLD", "0.5"))
 
 TASKS = ["gdpr_contract_easy", "hipaa_medical_medium", "security_logs_hard"]
 
+# Setup outputs directory and logging
+OUTPUT_DIR = Path("outputs")
+OUTPUT_DIR.mkdir(exist_ok=True)
+TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
+LOG_FILE = OUTPUT_DIR / f"inference_{TIMESTAMP}.log"
+SUMMARY_FILE = OUTPUT_DIR / f"summary_{TIMESTAMP}.json"
+
+# Global state for tracking
+_task_results: List[Dict[str, Any]] = []
+_run_start_time = time.time()
+
 # PII patterns
 LABEL_PATTERNS: Dict[str, List[str]] = {
     "EMAIL": [r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"],
@@ -66,28 +80,38 @@ LABEL_PATTERNS: Dict[str, List[str]] = {
 PII_REGEX_PATTERNS = [p for patterns in LABEL_PATTERNS.values() for p in patterns]
 
 
-# Logging
+# Logging utilities
+def _write_log(message: str) -> None:
+    """Write message to both console and log file."""
+    print(message, flush=True)
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(message + "\n")
+
+
 def log_start(task: str, env: str, model: str) -> None:
-    print(f"[START] task={task} env={env} model={model}", flush=True)
+    msg = f"[START] task={task} env={env} model={model}"
+    _write_log(msg)
 
 
 def log_step(
     step: int, action: str, reward: float, done: bool, error: Optional[str]
 ) -> None:
-    print(
+    msg = (
         f"[STEP] step={step} action={action} reward={reward:.2f} "
-        f"done={str(done).lower()} error={error if error else 'null'}",
-        flush=True,
+        f"done={str(done).lower()} error={error if error else 'null'}"
     )
+    _write_log(msg)
 
 
-def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+def log_end(
+    success: bool, steps: int, score: float, rewards: List[float], task_time_s: float = 0.0
+) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(
+    msg = (
         f"[END] success={str(success).lower()} steps={steps} "
-        f"score={score:.3f} rewards={rewards_str}",
-        flush=True,
+        f"score={score:.3f} rewards={rewards_str} time={task_time_s:.2f}s"
     )
+    _write_log(msg)
 
 
 # Reward helpers
@@ -361,12 +385,13 @@ async def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[s
         raise
 
 
-# Task runner
+# Task runner with timing and result collection
 async def run_task(client: OpenAI, task_id: str, env: RedactionEnv) -> None:
     rewards: List[float] = []
     steps = 0
     score = 0.0
     success = False
+    task_start_time = time.time()
 
     log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
 
@@ -419,7 +444,45 @@ async def run_task(client: OpenAI, task_id: str, env: RedactionEnv) -> None:
         success = False
 
     finally:
-        log_end(success=success, steps=steps, score=score, rewards=rewards)
+        task_elapsed = time.time() - task_start_time
+        log_end(success=success, steps=steps, score=score, rewards=rewards, task_time_s=task_elapsed)
+        
+        # Collect result for summary
+        _task_results.append({
+            "task_id": task_id,
+            "success": success,
+            "steps": steps,
+            "score": round(score, 3),
+            "rewards": [round(r, 2) for r in rewards],
+            "time_seconds": round(task_elapsed, 2),
+        })
+
+
+def _save_summary() -> None:
+    """Save inference summary to JSON file."""
+    total_time = time.time() - _run_start_time
+    summary = {
+        "timestamp": TIMESTAMP,
+        "model": MODEL_NAME,
+        "benchmark": BENCHMARK,
+        "total_tasks": len(_task_results),
+        "total_time_seconds": round(total_time, 2),
+        "tasks": _task_results,
+        "total_passed": sum(1 for r in _task_results if r["success"]),
+        "average_score": round(
+            sum(r["score"] for r in _task_results) / len(_task_results), 3
+        )
+        if _task_results
+        else 0.0,
+    }
+    
+    with open(SUMMARY_FILE, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+    
+    _write_log("\n" + "="*60)
+    _write_log(f"Summary saved to: {SUMMARY_FILE}")
+    _write_log(f"Log file saved to: {LOG_FILE}")
+    _write_log("="*60 + "\n")
 
 
 # Entry point
@@ -448,6 +511,9 @@ async def main() -> None:
                     await run_task(client, task_id, env)
             except Exception as exc:
                 print(f"[DEBUG] env error on task {task_id}: {exc}", flush=True)
+    
+    # Save summary after all tasks complete
+    _save_summary()
 
 
 if __name__ == "__main__":
