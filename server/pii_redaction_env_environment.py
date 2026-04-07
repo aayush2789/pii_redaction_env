@@ -318,6 +318,8 @@ class RedactionEnvironment(Environment):
         miss_penalty = 0.0
         exploration_reward = 0.0
         finish_bonus = 0.0
+        skip_miss_penalty = 0.0
+        skip_stagnation_penalty = 0.0
 
         is_span_action = (
             action.action_type == ActionType.REDACT
@@ -352,9 +354,23 @@ class RedactionEnvironment(Environment):
         if action.action_type == ActionType.NEXT_CHUNK:
             visible_missed = visible_missed_before_next
             if visible_missed > 0:
-                miss_penalty = -0.1 * visible_missed
+                miss_penalty = -0.3 * visible_missed
             else:
                 exploration_reward = 0.02
+
+        if action.action_type == ActionType.SKIP:
+            visible_missed_skip = self._count_visible_missed_entities()
+            if visible_missed_skip > 0:
+                skip_miss_penalty = -0.3 * visible_missed_skip
+
+            trailing_skips = 0
+            for prev_action in reversed(self.previous_actions):
+                if prev_action == ActionType.SKIP.value:
+                    trailing_skips += 1
+                else:
+                    break
+            if trailing_skips > 1:
+                skip_stagnation_penalty = -0.05 * min(5, trailing_skips - 1)
 
         if action.action_type == ActionType.FINISH and self._cached_fn == 0:
             finish_bonus = 1.0
@@ -366,6 +382,8 @@ class RedactionEnvironment(Environment):
         components["miss_penalty"] = round(miss_penalty, 4)
         components["exploration_reward"] = round(exploration_reward, 4)
         components["finish_bonus"] = round(finish_bonus, 4)
+        components["skip_miss_penalty"] = round(skip_miss_penalty, 4)
+        components["skip_stagnation_penalty"] = round(skip_stagnation_penalty, 4)
 
         raw_total = round(
             shaping_reward
@@ -380,6 +398,12 @@ class RedactionEnvironment(Environment):
             + miss_penalty
             + exploration_reward
             + finish_bonus,
+            4,
+        )
+        raw_total = round(
+            raw_total
+            + skip_miss_penalty
+            + skip_stagnation_penalty,
             4,
         )
         # Unormalized total reward is used for grading and analysis, while the shaping component can be scaled if needed.

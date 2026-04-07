@@ -1,0 +1,29 @@
+[CONFIG] api_base=https://integrate.api.nvidia.com/v1 model=moonshotai/kimi-k2-instruct-0905 timeout_s=30.0 sdk_retries=0 retry_on_transient=false
+[START] task=gdpr_contract_easy env=pii_redaction model=moonshotai/kimi-k2-instruct-0905
+[STEP] step=1 action=REDACT(59,69) reward=0.86 done=false error=null
+[STEP] step=2 action=REDACT(40,52) reward=0.82 done=false error=null
+[STEP] step=3 action=REDACT(85,108) reward=0.80 done=false error=null
+[STEP] step=4 action=REDACT(119,131) reward=0.74 done=false error=null
+[STEP] step=5 action=FINISH reward=0.50 done=true error=null
+[END] success=true steps=5 score=0.745 rewards=0.86,0.82,0.80,0.74,0.50 time=19.99s
+[START] task=hipaa_medical_medium env=pii_redaction model=moonshotai/kimi-k2-instruct-0905
+[STEP] step=1 action=REDACT(34,48) reward=0.87 done=false error=null
+[STEP] step=2 action=REDACT(89,116) reward=0.82 done=false error=null
+[STEP] step=3 action=REDACT(56,73) reward=0.81 done=false error=null
+[STEP] step=4 action=NEXT_CHUNK reward=0.50 done=false error=null
+[STEP] step=5 action=NEXT_CHUNK reward=0.50 done=false error=null
+[STEP] step=6 action=FINISH reward=0.50 done=true error=null
+[END] success=true steps=6 score=0.666 rewards=0.87,0.82,0.81,0.50,0.50,0.50 time=6.42s
+[START] task=security_logs_hard env=pii_redaction model=moonshotai/kimi-k2-instruct-0905
+[STEP] step=1 action=REDACT(58,68) reward=0.83 done=false error=null
+[STEP] step=2 action=REDACT(129,137) reward=0.40 done=false error=null
+[STEP] step=3 action=REDACT(96,128) reward=0.70 done=false error=null
+[STEP] step=4 action=REDACT(168,192) reward=0.41 done=false error=null
+[STEP] step=5 action=FINISH reward=0.50 done=true error=null
+[END] success=true steps=5 score=0.570 rewards=0.83,0.40,0.70,0.41,0.50 time=5.52s
+
+============================================================
+Summary saved to: outputs\summary_20260407_141744.json
+Log file saved to: outputs\inference_20260407_141744.log
+============================================================
+

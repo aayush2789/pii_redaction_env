@@ -74,28 +74,28 @@ app = create_app(
     create_redaction_environment,
     RedactionAction,
     RedactionObservation,
-    env_name="pii-redaction-env",
+    env_name="pii_redaction_env",
 )
 
 
-@app.post("/grade")
-async def grade() -> dict:
-    """Explicitly expose the grade method of the environment."""
-    # Note: create_app stores the env factory/instance.
-    # We can get the environment from the app state if needed,
-    # but the simplest way is to use the environment associated with the request session.
-    # For now, we'll assume a single-session model or use the env_registry.
-    from openenv.core.env_server.http_server import get_env_registry
+# @app.post("/grade")
+# async def grade() -> dict:
+#     """Explicitly expose the grade method of the environment."""
+#     # Note: create_app stores the env factory/instance.
+#     # We can get the environment from the app state if needed,
+#     # but the simplest way is to use the environment associated with the request session.
+#     # For now, we'll assume a single-session model or use the env_registry.
+#     from openenv.core.env_server.http_server import get_env_registry
 
-    registry = get_env_registry(app)
-    # Get the first active env (for single-session local testing)
-    envs = list(registry.envs.values())
-    if not envs:
-        return {"error": "No active environment session"}
-    env = envs[0]
-    grade_obj = env.grade()
-    # TaskGrade is a pydantic model, so we can use model_dump()
-    return grade_obj.model_dump()
+#     registry = get_env_registry(app)
+#     # Get the first active env (for single-session local testing)
+#     envs = list(registry.envs.values())
+#     if not envs:
+#         return {"error": "No active environment session"}
+#     env = envs[0]
+#     grade_obj = env.grade()
+#     # TaskGrade is a pydantic model, so we can use model_dump()
+#     return grade_obj.model_dump()
 
 
 def main(host: str = "0.0.0.0", port: int = 7860) -> None:

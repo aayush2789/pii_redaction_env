@@ -40,8 +40,12 @@ BENCHMARK = os.getenv("BENCHMARK", "pii-redaction-env")
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.0"))
 OPENAI_SEED = int(os.getenv("OPENAI_SEED", "42"))
 INFERENCE_MAX_STEPS = int(os.getenv("INFERENCE_MAX_STEPS", "100"))
-REQUEST_TIMEOUT_S = float(os.getenv("REQUEST_TIMEOUT_S", "90"))
+REQUEST_TIMEOUT_S = float(os.getenv("REQUEST_TIMEOUT_S", "30"))
 SUCCESS_SCORE_THRESHOLD = float(os.getenv("SUCCESS_SCORE_THRESHOLD", "0.5"))
+OPENAI_MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", "0"))
+RETRY_ON_TRANSIENT_ERRORS = os.getenv(
+    "RETRY_ON_TRANSIENT_ERRORS", "0"
+).strip().lower() in {"1", "true", "yes"}
 
 TASKS = ["gdpr_contract_easy", "hipaa_medical_medium", "security_logs_hard"]
 
@@ -361,7 +365,7 @@ async def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[s
     except Exception as exc:
         msg = str(exc)
         msg_low = msg.lower()
-        retry = (
+        retry = RETRY_ON_TRANSIENT_ERRORS and (
             "500" in msg
             or "internal server error" in msg_low
             or "timeout" in msg_low
@@ -491,7 +495,17 @@ async def main() -> None:
     if not resolved_token:
         raise RuntimeError("HF_TOKEN (or OPENAI_API_KEY) is required.")
 
-    client = OpenAI(base_url=API_BASE_URL, api_key=resolved_token)
+    client = OpenAI(
+        base_url=API_BASE_URL,
+        api_key=resolved_token,
+        max_retries=OPENAI_MAX_RETRIES,
+    )
+
+    _write_log(
+        "[CONFIG] "
+        f"api_base={API_BASE_URL} model={MODEL_NAME} timeout_s={REQUEST_TIMEOUT_S} "
+        f"sdk_retries={OPENAI_MAX_RETRIES} retry_on_transient={str(RETRY_ON_TRANSIENT_ERRORS).lower()}"
+    )
 
     # Default mode: connect to already-running env endpoint (avoids spawning duplicate containers).
     # Opt-in image mode: set USE_DOCKER_IMAGE=1 and LOCAL_IMAGE_NAME=<image>.

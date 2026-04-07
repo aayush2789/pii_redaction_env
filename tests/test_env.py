@@ -1,5 +1,11 @@
-from pii_redaction_env.server.pii_redaction_env_environment import RedactionEnvironment
-from pii_redaction_env.models import ActionType, RedactionAction
+try:
+    from pii_redaction_env.server.pii_redaction_env_environment import (
+        RedactionEnvironment,
+    )
+    from pii_redaction_env.models import ActionType, RedactionAction
+except ImportError:
+    from server.pii_redaction_env_environment import RedactionEnvironment
+    from models import ActionType, RedactionAction
 
 
 def test_reset_returns_valid_observation():
@@ -329,8 +335,33 @@ def test_next_chunk_penalizes_visible_missed_entities():
 
     _, reward, _, _ = env.step(RedactionAction(action_type=ActionType.NEXT_CHUNK))
 
-    assert reward.components.get("miss_penalty", 0.0) == round(-0.1 * visible_missed, 4)
+    assert reward.components.get("miss_penalty", 0.0) == round(-0.3 * visible_missed, 4)
     assert reward.components.get("exploration_reward", 0.0) == 0.0
+
+
+def test_skip_penalizes_visible_missed_entities():
+    env = RedactionEnvironment(task_id="hipaa_medical_medium", window_size=500)
+    env.reset(seed=0)
+
+    visible_missed = env._count_visible_missed_entities()
+    assert visible_missed >= 1
+
+    _, reward, _, _ = env.step(RedactionAction(action_type=ActionType.SKIP))
+
+    assert reward.components.get("skip_miss_penalty", 0.0) == round(
+        -0.3 * visible_missed, 4
+    )
+
+
+def test_repeated_skip_adds_stagnation_penalty():
+    env = RedactionEnvironment(task_id="hipaa_medical_medium", window_size=500)
+    env.reset(seed=0)
+
+    _, reward_1, _, _ = env.step(RedactionAction(action_type=ActionType.SKIP))
+    _, reward_2, _, _ = env.step(RedactionAction(action_type=ActionType.SKIP))
+
+    assert reward_1.components.get("skip_stagnation_penalty", 0.0) == 0.0
+    assert reward_2.components.get("skip_stagnation_penalty", 0.0) < 0.0
 
 
 def test_next_chunk_exploration_reward_when_no_visible_missed_entities():
