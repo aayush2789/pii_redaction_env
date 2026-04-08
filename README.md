@@ -395,7 +395,7 @@ high variance (std = 0.10) partly due to two runs that were cut short by connect
 
 **Figure 4 — Kimi K2 mean score vs run-to-run variance (all 4 runs; error runs = 0)**
 
-![Kimi consistency](output/fig4_kimi_consistency.png)
+![Kimi consistency](outputs/fig4_kimi_consistency.png)
 
 
 ## Example Inference Output
