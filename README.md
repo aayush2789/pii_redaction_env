@@ -383,19 +383,19 @@ high variance (std = 0.10) partly due to two runs that were cut short by connect
 
 **Figure 1 — Final scores by task with error bars (Kimi) and task success thresholds**
 
-![Final scores by task](../plots/fig1_scores_by_task.png)
+![Final scores by task](outputs/fig1_scores_by_task.png)
 
 **Figure 2 — Performance radar across all three task dimensions**
 
-![Performance radar](../plots/fig2_radar.png)
+![Performance radar](outputs/fig2_radar.png)
 
 **Figure 3 — Step-level reward traces (best clean run per model per task)**
 
-![Step reward curves](../plots/fig3_reward_curves.png)
+![Step reward curves](outputs/fig3_reward_curves.png)
 
 **Figure 4 — Kimi K2 mean score vs run-to-run variance (all 4 runs; error runs = 0)**
 
-![Kimi consistency](../plots/fig4_kimi_consistency.png)
+![Kimi consistency](output/fig4_kimi_consistency.png)
 
 
 ## Example Inference Output
