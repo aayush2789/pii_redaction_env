@@ -42,6 +42,7 @@ class ServerRedactionEnvironment(RedactionEnvironment):
             "reward_total": reward.total,
             "reward_raw_total": reward.raw_total,
             "reward_components": reward.components,
+            "remaining_entities": reward.remaining_entities,
             "invalid_action": bool(info.get("invalid_action", False)),
         }
         return observation
@@ -51,7 +52,7 @@ def create_redaction_environment() -> ServerRedactionEnvironment:
     """Factory function that creates RedactionEnvironment with config."""
 
     task_id = os.getenv("PII_TASK_ID")
-    window_size = int(os.getenv("PII_WINDOW_SIZE", "500"))
+    window_size = int(os.getenv("PII_WINDOW_SIZE", "200"))
     max_steps = int(os.getenv("PII_MAX_STEPS", "100"))
     return ServerRedactionEnvironment(
         task_id=task_id,

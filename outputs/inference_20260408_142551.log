@@ -1,0 +1,37 @@
+[START] task=gdpr_contract_easy env=pii_redaction model=moonshotai/kimi-k2-instruct-0905
+[STEP] step=1 action=REDACT(59,69) reward=0.86 done=false error=null
+[STEP] step=2 action=REDACT(42,53) reward=0.84 done=false error=null
+[STEP] step=3 action=REDACT(85,108) reward=0.80 done=false error=null
+[STEP] step=4 action=REDACT(119,131) reward=0.74 done=false error=null
+[STEP] step=5 action=FINISH reward=0.50 done=true error=null
+[END] success=false steps=5 score=0.749 rewards=0.86,0.84,0.80,0.74,0.50 time=9.10s
+[START] task=hipaa_medical_medium env=pii_redaction model=moonshotai/kimi-k2-instruct-0905
+[STEP] step=1 action=REDACT(35,48) reward=0.87 done=false error=null
+[STEP] step=2 action=REDACT(89,116) reward=0.82 done=false error=null
+[STEP] step=3 action=REDACT(56,73) reward=0.81 done=false error=null
+[STEP] step=4 action=FINISH reward=0.50 done=true error=null
+[END] success=false steps=4 score=0.751 rewards=0.87,0.82,0.81,0.50 time=5.82s
+[START] task=security_logs_hard env=pii_redaction model=moonshotai/kimi-k2-instruct-0905
+[STEP] step=1 action=REDACT(60,70) reward=0.91 done=false error=null
+[STEP] step=2 action=REDACT(129,137) reward=0.40 done=false error=null
+[STEP] step=3 action=REDACT(183,210) reward=0.75 done=false error=null
+[STEP] step=4 action=REDACT(183,210) reward=0.09 done=false error=null
+[STEP] step=5 action=REDACT(211,243) reward=0.39 done=false error=null
+[STEP] step=6 action=REDACT(43,129) reward=0.40 done=false error=null
+[STEP] step=7 action=REDACT(60,95) reward=0.41 done=false error=null
+[STEP] step=8 action=REDACT(283,310) reward=0.37 done=false error=null
+[STEP] step=9 action=REDACT(311,335) reward=0.38 done=false error=null
+[STEP] step=10 action=REDACT(336,360) reward=0.38 done=false error=null
+[STEP] step=11 action=REDACT(129,137) reward=0.00 done=false error=null
+[STEP] step=12 action=REDACT(43,60) reward=0.39 done=false error=null
+[STEP] step=13 action=REDACT(361,384) reward=0.38 done=false error=null
+[STEP] step=14 action=REDACT(183,210) reward=0.09 done=false error=null
+[STEP] step=15 action=REDACT(384,408) reward=0.40 done=false error=null
+[STEP] step=16 action=FINISH reward=0.50 done=true error=null
+[END] success=false steps=16 score=0.391 rewards=0.91,0.40,0.75,0.09,0.39,0.40,0.41,0.37,0.38,0.38,0.00,0.39,0.38,0.09,0.40,0.50 time=21.44s
+
+============================================================
+Summary saved to: outputs\summary_20260408_142551.json
+Log file saved to: outputs\inference_20260408_142551.log
+============================================================
+

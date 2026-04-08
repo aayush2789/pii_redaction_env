@@ -194,6 +194,7 @@ class RedactionEnvironment(Environment):
             "reward_total": reward.total,
             "reward_raw_total": reward.raw_total,
             "reward_components": reward.components,
+            "remaining_entities": reward.remaining_entities,
         }
         info = {
             "step": self.step_count,

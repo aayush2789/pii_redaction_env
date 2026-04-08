@@ -1,0 +1,47 @@
+{
+  "timestamp": "20260408_142811",
+  "model": "moonshotai/kimi-k2-instruct-0905",
+  "benchmark": "pii_redaction",
+  "total_tasks": 3,
+  "total_time_seconds": 32.97,
+  "tasks": [
+    {
+      "task_id": "gdpr_contract_easy",
+      "success": false,
+      "steps": 1,
+      "score": 0.0,
+      "rewards": [],
+      "time_seconds": 19.86
+    },
+    {
+      "task_id": "hipaa_medical_medium",
+      "success": false,
+      "steps": 5,
+      "score": 0.71,
+      "rewards": [
+        0.89,
+        0.85,
+        0.81,
+        0.5,
+        0.5
+      ],
+      "time_seconds": 6.25
+    },
+    {
+      "task_id": "security_logs_hard",
+      "success": false,
+      "steps": 5,
+      "score": 0.564,
+      "rewards": [
+        0.44,
+        0.41,
+        0.78,
+        0.7,
+        0.5
+      ],
+      "time_seconds": 6.53
+    }
+  ],
+  "total_passed": 0,
+  "average_score": 0.425
+}

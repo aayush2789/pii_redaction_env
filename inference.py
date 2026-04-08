@@ -164,6 +164,37 @@ def _chat_completion_kwargs(prompt: str, use_json_mode: bool) -> Dict[str, Any]:
 
 
 # Prompt
+def _observation_metadata(obs) -> Dict[str, Any]:
+    meta = getattr(obs, "metadata", None)
+    return meta if isinstance(meta, dict) else {}
+
+
+def _remaining_entities_hint(obs) -> str:
+    meta = _observation_metadata(obs)
+    for key in ("remaining_entities", "reward_remaining_entities"):
+        value = meta.get(key)
+        if isinstance(value, (int, float)):
+            return str(max(0, int(value)))
+    return "unknown"
+
+
+def _last_reward_signal_hint(obs) -> str:
+    meta = _observation_metadata(obs)
+    components = meta.get("reward_components")
+    if not isinstance(components, dict):
+        return "unavailable"
+    miss_penalty = float(components.get("miss_penalty", 0.0) or 0.0)
+    skip_miss_penalty = float(components.get("skip_miss_penalty", 0.0) or 0.0)
+    skip_stagnation_penalty = float(
+        components.get("skip_stagnation_penalty", 0.0) or 0.0
+    )
+    return (
+        f"miss_penalty={miss_penalty:.2f}, "
+        f"skip_miss_penalty={skip_miss_penalty:.2f}, "
+        f"skip_stagnation_penalty={skip_stagnation_penalty:.2f}"
+    )
+
+
 def _build_prompt(obs) -> str:
     return f"""
 You are a GDPR/HIPAA compliance analyst performing PII redaction on a document.
@@ -204,6 +235,8 @@ Current window (chars {obs.cursor_position}-{obs.cursor_position + len(obs.visib
 ---
 Progress: {obs.progress_pct:.0%} | Already redacted: {obs.redacted_spans}
 Previous actions: {obs.previous_actions}
+Remaining entities (approx): {_remaining_entities_hint(obs)}
+Last-step reward signals: {_last_reward_signal_hint(obs)}
 
 Worked example: cursor_position=50, visible_text="Patient John Smith lived"
   "John" is at relative offset 8 -> absolute_start=58, absolute_end=62
@@ -214,16 +247,35 @@ ADDRESS example: visible_text="resides at 90 Birchwood Lane."
 Return strict JSON only, one of:
 {{"action": "REDACT", "start": <abs_start>, "end": <abs_end>, "label": "<PII_TYPE>"}}
 {{"action": "NEXT_CHUNK"}}
+{{"action": "PREV_CHUNK"}}
 {{"action": "SKIP"}}
 {{"action": "FINISH"}}
 
 Rules:
 - REDACT: one PII span, absolute offsets, always include label.
 - NEXT_CHUNK: after all PII in current window is handled.
+- PREV_CHUNK: use as a recovery move if likely PII was missed in the prior window.
 - SKIP: no PII in current window.
 - FINISH: only when progress_pct >= 1.0 AND all PII types have been checked.
 - Do NOT re-redact already_redacted spans.
 - Prefer tight, precise spans over broad ones.
+
+Navigation Strategy (VERY IMPORTANT):
+- If you moved to NEXT_CHUNK but later realize PII was likely missed in the previous window, use PREV_CHUNK to go back and correct it.
+- If previous_actions show repeated NEXT_CHUNK or SKIP without finding entities, reconsider earlier windows using PREV_CHUNK.
+- If you see partial context of a PII span (for example only a first name or a truncated email), consider PREV_CHUNK to recover the full span.
+- Avoid repeatedly moving forward if entities are being missed.
+- Use PREV_CHUNK as a recovery mechanism after low-reward navigation steps.
+
+Bad behavior to avoid:
+- Repeated NEXT_CHUNK without fully processing the current window.
+- Skipping windows that contain PII.
+- Never going back to correct missed entities.
+
+Reward guidance:
+- Missing visible PII before moving forward causes penalties.
+- Correct redactions increase reward.
+- Use PREV_CHUNK to recover missed entities and improve score.
 """.strip()
 
 
@@ -344,6 +396,42 @@ def _coerce_action(
         return RedactionAction(action_type=ActionType.NEXT_CHUNK), str(exc)
 
 
+def _apply_navigation_recovery(
+    action: RedactionAction, obs
+) -> Tuple[RedactionAction, Optional[str]]:
+    if action.action_type not in {ActionType.NEXT_CHUNK, ActionType.SKIP}:
+        return action, None
+
+    previous_actions = list(obs.previous_actions or [])
+    trailing_nav = previous_actions[-3:]
+    nav_stagnation = len(trailing_nav) == 3 and all(
+        a in {ActionType.NEXT_CHUNK.value, ActionType.SKIP.value} for a in trailing_nav
+    )
+
+    meta = _observation_metadata(obs)
+    components = meta.get("reward_components") if isinstance(meta, dict) else None
+    miss_penalty = 0.0
+    skip_miss_penalty = 0.0
+    skip_stagnation_penalty = 0.0
+    if isinstance(components, dict):
+        miss_penalty = float(components.get("miss_penalty", 0.0) or 0.0)
+        skip_miss_penalty = float(components.get("skip_miss_penalty", 0.0) or 0.0)
+        skip_stagnation_penalty = float(
+            components.get("skip_stagnation_penalty", 0.0) or 0.0
+        )
+
+    should_recover = (
+        miss_penalty < 0.0
+        or skip_miss_penalty < 0.0
+        or skip_stagnation_penalty < 0.0
+        or nav_stagnation
+    )
+
+    if should_recover and int(getattr(obs, "cursor_position", 0)) > 0:
+        return RedactionAction(action_type=ActionType.PREV_CHUNK), "nav_recovery_prev"
+    return action, None
+
+
 async def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[str]]:
     # Auto-finish if cursor is stuck at end
     trailing = 0
@@ -370,7 +458,11 @@ async def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[s
             return RedactionAction(
                 action_type=ActionType.NEXT_CHUNK
             ), f"parse_error:{parse_error}"
-        return _coerce_action(payload, obs)
+        action, action_error = _coerce_action(payload, obs)
+        action, nav_error = _apply_navigation_recovery(action, obs)
+        if action_error and nav_error:
+            return action, f"{action_error};{nav_error}"
+        return action, action_error or nav_error
     except Exception as exc:
         msg = str(exc)
         msg_low = msg.lower()
@@ -392,7 +484,11 @@ async def _next_action(client: OpenAI, obs) -> Tuple[RedactionAction, Optional[s
                     return RedactionAction(
                         action_type=ActionType.NEXT_CHUNK
                     ), f"retry_parse_error:{parse_error}"
-                return _coerce_action(payload, obs)
+                action, action_error = _coerce_action(payload, obs)
+                action, nav_error = _apply_navigation_recovery(action, obs)
+                if action_error and nav_error:
+                    return action, f"{action_error};{nav_error}"
+                return action, action_error or nav_error
             except Exception as retry_exc:
                 raise RuntimeError(str(retry_exc)) from retry_exc
         raise
