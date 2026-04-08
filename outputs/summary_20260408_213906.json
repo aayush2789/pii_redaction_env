@@ -1,0 +1,60 @@
+{
+  "timestamp": "20260408_213906",
+  "model": "google/gemma-4-31b-it",
+  "benchmark": "pii_redaction",
+  "total_tasks": 3,
+  "total_time_seconds": 155.39,
+  "tasks": [
+    {
+      "task_id": "gdpr_contract_easy",
+      "success": false,
+      "steps": 2,
+      "score": 0.843,
+      "rewards": [
+        0.84
+      ],
+      "time_seconds": 42.76
+    },
+    {
+      "task_id": "hipaa_medical_medium",
+      "success": false,
+      "steps": 6,
+      "score": 0.595,
+      "rewards": [
+        0.87,
+        0.83,
+        0.35,
+        0.51,
+        0.51,
+        0.5
+      ],
+      "time_seconds": 34.24
+    },
+    {
+      "task_id": "security_logs_hard",
+      "success": false,
+      "steps": 15,
+      "score": 0.494,
+      "rewards": [
+        0.88,
+        0.4,
+        0.7,
+        0.35,
+        0.78,
+        0.59,
+        0.51,
+        0.42,
+        0.38,
+        0.39,
+        0.39,
+        0.35,
+        0.42,
+        0.35,
+        0.5
+      ],
+      "time_seconds": 77.12
+    }
+  ],
+  "total_passed": 0,
+  "average_score": 0.644
+}
