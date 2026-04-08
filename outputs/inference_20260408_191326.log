@@ -1,0 +1,40 @@
+[WARN] Docker image mode failed (image=pii_redaction_env-env:latest): Container at http://localhost:59776 did not become ready within 30.0s. Falling back to base_url=http://localhost:7860.
+[START] task=gdpr_contract_easy env=pii_redaction model=moonshotai/kimi-k2-instruct-0905
+[STEP] step=1 action=ERROR reward=0.00 done=true error=Request timed out.
+[END] success=false steps=1 score=0.000 rewards= time=31.76s
+[START] task=hipaa_medical_medium env=pii_redaction model=moonshotai/kimi-k2-instruct-0905
+[STEP] step=1 action=REDACT(56,71) reward=0.84 done=false error=null
+[STEP] step=2 action=REDACT(34,48) reward=0.78 done=false error=null
+[STEP] step=3 action=REDACT(89,116) reward=0.80 done=false error=null
+[STEP] step=4 action=NEXT_CHUNK reward=0.51 done=false error=null
+[STEP] step=5 action=NEXT_CHUNK reward=0.51 done=false error=null
+[STEP] step=6 action=NEXT_CHUNK reward=0.51 done=false error=null
+[STEP] step=7 action=FINISH reward=1.00 done=true error=cursor_clamped
+[END] success=false steps=7 score=0.707 rewards=0.84,0.78,0.80,0.51,0.51,0.51,1.00 time=7.09s
+[START] task=security_logs_hard env=pii_redaction model=moonshotai/kimi-k2-instruct-0905
+[STEP] step=1 action=REDACT(56,66) reward=0.43 done=false error=null
+[STEP] step=2 action=REDACT(67,107) reward=0.40 done=false error=null
+[STEP] step=3 action=REDACT(108,127) reward=0.69 done=false error=null
+[STEP] step=4 action=NEXT_CHUNK reward=0.20 done=false error=null
+[STEP] step=5 action=NEXT_CHUNK reward=0.35 done=false error=null
+[STEP] step=6 action=REDACT(200,219) reward=0.42 done=false error=null
+[STEP] step=7 action=REDACT(245,254) reward=0.39 done=false error=null
+[STEP] step=8 action=REDACT(377,400) reward=0.39 done=false error=null
+[STEP] step=9 action=NEXT_CHUNK reward=0.20 done=false error=null
+[STEP] step=10 action=REDACT(300,319) reward=0.39 done=false error=null
+[STEP] step=11 action=REDACT(320,337) reward=0.39 done=false error=null
+[STEP] step=12 action=REDACT(300,319) reward=0.00 done=false error=null
+[STEP] step=13 action=REDACT(377,400) reward=0.00 done=false error=null
+[STEP] step=14 action=REDACT(377,400) reward=0.00 done=false error=null
+[STEP] step=15 action=REDACT(401,420) reward=0.73 done=false error=null
+[STEP] step=16 action=NEXT_CHUNK reward=0.51 done=false error=null
+[STEP] step=17 action=NEXT_CHUNK reward=0.51 done=false error=null
+[STEP] step=18 action=NEXT_CHUNK reward=0.51 done=false error=null
+[STEP] step=19 action=FINISH reward=0.50 done=true error=cursor_clamped
+[END] success=false steps=19 score=0.370 rewards=0.43,0.40,0.69,0.20,0.35,0.42,0.39,0.39,0.20,0.39,0.39,0.00,0.00,0.00,0.73,0.51,0.51,0.51,0.50 time=22.44s
+
+============================================================
+Summary saved to: outputs\summary_20260408_191326.json
+Log file saved to: outputs\inference_20260408_191326.log
+============================================================
+

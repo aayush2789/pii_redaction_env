@@ -62,7 +62,7 @@ flowchart TD
     D -->|REDACT start end label| E[Apply span to document\nUpdate detected entities]
     D -->|NEXT_CHUNK| F[Advance cursor\nby window_size / 2]
     D -->|PREV_CHUNK| G[Move cursor back\nby window_size / 2]
-    D -->|SKIP| H[No state change\nAcknowledge window]
+    D -->|SKIP| H[No cursor movement\nRe-check same window]
     D -->|FINISH| I([End Episode\nCompute final grade])
     E --> J[Compute step reward\nPBRS + direct bonuses]
     F --> J
@@ -90,6 +90,10 @@ At every step the agent receives a `RedactionObservation` with the following fie
 | `previous_actions` | `list[str]` | The last 5 action strings taken, in order. Useful for detecting navigation loops. |
 | `done` | `bool` | `True` if the episode has terminated (via `FINISH` or max steps exhausted). |
 
+### Navigation hints
+
+The `previous_actions` field is the main signal for detecting loops and recovering from missed entities. Use it to decide when to revisit a window or move forward.
+
 ### Absolute indexing
 
 All span coordinates are **absolute**, not relative to the window. To convert a position visible in the window to an absolute document index:
@@ -111,14 +115,18 @@ When the window overlaps a previously redacted span, that region is shown as `[R
 | Action | Required fields | Effect |
 |---|---|---|
 | `REDACT` | `start`, `end`, `label` | Commits a redaction span. Must include an absolute `start`, `end`, and a PII type label. Invalid spans (out of bounds, end ≤ start, duplicate with IoU > 0.8) are rejected and penalized. |
-| `NEXT_CHUNK` | — | Slides the window forward by `window_size // 2` characters. This is the primary navigation action. Moving forward when unredacted entities are still visible in the current window incurs a miss penalty. |
-| `PREV_CHUNK` | — | Slides the window backward by `window_size // 2`. Use to revisit a region the agent passed without fully processing. |
-| `SKIP` | — | No state change. Signals that the agent has examined the current window and found no PII. Using SKIP when PII is visible incurs a miss penalty. Using it repeatedly triggers a stagnation penalty. |
+| `NEXT_CHUNK` | — | Slides the window forward by `window_size // 2` characters. This is the default navigation action after a clean window. Moving forward when unredacted entities are still visible in the current window incurs a miss penalty. |
+| `PREV_CHUNK` | — | Slides the window backward by `window_size // 2`. Use it when you likely missed PII in the prior window or need to recover a partial span. |
+| `SKIP` | — | No cursor movement. It only re-checks the same window. Using SKIP when PII is visible incurs a miss penalty, and repeated SKIP actions trigger a stagnation penalty. |
 | `FINISH` | — | Terminates the episode. If all ground-truth entities have been matched (`remaining_entities == 0`), the agent receives a large finish bonus of `+1.0`. If any entities are unmatched, no bonus is awarded and the episode ends at whatever F1 the agent achieved. |
 
 ### Valid label values
 
 `EMAIL` · `PHONE` · `SSN` · `NAME` · `ADDRESS` · `DOB`
+
+### Navigation strategy
+
+SKIP does not move the cursor, so repeated SKIP can trap the agent on the same window. Use NEXT_CHUNK as the default move when a window looks clean. Use PREV_CHUNK when the current or previous window likely still contains missed PII, especially after a low-reward step or when `previous_actions` shows repeated NEXT_CHUNK or SKIP.
 
 ---
 
@@ -177,6 +185,8 @@ In addition to shaping, several direct bonuses and penalties are applied per ste
 | `finish_bonus` | FINISH and all GT entities matched (remaining = 0) | `+1.0` |
 | `skip_miss_penalty` | SKIP while unredacted GT entities overlap visible window | `−0.3 × missed_count` |
 | `skip_stagnation_penalty` | More than 1 consecutive SKIP action | `−0.05 × min(5, trailing_skips − 1)` |
+
+`previous_actions` is included in observations so the agent can detect repeated SKIP or NEXT_CHUNK loops. A repeated SKIP pattern is a sign to move forward or revisit earlier context instead of staying on the same window.
 
 ### Total Step Reward
 
@@ -364,7 +374,6 @@ pii_redaction_env/
 ├── openenv.yaml
 ├── pyproject.toml
 ├── README.md
-├── sample_inference_script.py
 ├── server/
 │   ├── app.py
 │   ├── Dockerfile

@@ -269,13 +269,13 @@ Navigation Strategy (VERY IMPORTANT):
 
 Bad behavior to avoid:
 - Repeated NEXT_CHUNK without fully processing the current window.
-- Skipping windows that contain PII.
 - Never going back to correct missed entities.
 
-Reward guidance:
-- Missing visible PII before moving forward causes penalties.
-- Correct redactions increase reward.
-- Use PREV_CHUNK to recover missed entities and improve score.
+Critical navigation rule:
+- SKIP does not move the cursor; if the window is clean, default to NEXT_CHUNK.
+- Use SKIP only to re-check the same window when uncertain.
+- Two consecutive SKIPs are a loop signal: move forward with NEXT_CHUNK.
+- Use PREV_CHUNK when you likely missed PII in the prior window.
 """.strip()
 
 
@@ -408,6 +408,13 @@ def _apply_navigation_recovery(
         a in {ActionType.NEXT_CHUNK.value, ActionType.SKIP.value} for a in trailing_nav
     )
 
+    trailing_skips = 0
+    for prev_action in reversed(previous_actions):
+        if prev_action == ActionType.SKIP.value:
+            trailing_skips += 1
+        else:
+            break
+
     meta = _observation_metadata(obs)
     components = meta.get("reward_components") if isinstance(meta, dict) else None
     miss_penalty = 0.0
@@ -426,6 +433,9 @@ def _apply_navigation_recovery(
         or skip_stagnation_penalty < 0.0
         or nav_stagnation
     )
+
+    if action.action_type == ActionType.SKIP and trailing_skips >= 2:
+        return RedactionAction(action_type=ActionType.NEXT_CHUNK), "force_progress"
 
     if should_recover and int(getattr(obs, "cursor_position", 0)) > 0:
         return RedactionAction(action_type=ActionType.PREV_CHUNK), "nav_recovery_prev"
@@ -605,26 +615,28 @@ async def main() -> None:
         api_key=resolved_token,
         max_retries=OPENAI_MAX_RETRIES,
     )
-
-    # _write_log(
-    #     "[CONFIG] "
-    #     f"api_base={API_BASE_URL} model={MODEL_NAME} timeout_s={REQUEST_TIMEOUT_S} "
-    #     f"sdk_retries={OPENAI_MAX_RETRIES} retry_on_transient={str(RETRY_ON_TRANSIENT_ERRORS).lower()}"
-    # )
-
     # Default mode: connect to already-running env endpoint (avoids spawning duplicate containers).
     # Opt-in image mode: set USE_DOCKER_IMAGE=1 and LOCAL_IMAGE_NAME=<image>.
+    used_docker_image_mode = False
     if USE_DOCKER_IMAGE:
         if not IMAGE_NAME:
             raise RuntimeError(
                 "USE_DOCKER_IMAGE=1 requires LOCAL_IMAGE_NAME to be set."
             )
-        env = await RedactionEnv.from_docker_image(IMAGE_NAME)
-        async with env:
-            for task_id in TASKS:
-                await run_task(client, task_id, env)
-    else:
-        # connect to already running env
+        try:
+            env = await RedactionEnv.from_docker_image(IMAGE_NAME)
+            used_docker_image_mode = True
+            async with env:
+                for task_id in TASKS:
+                    await run_task(client, task_id, env)
+        except Exception as exc:
+            _write_log(
+                "[WARN] Docker image mode failed "
+                f"(image={IMAGE_NAME}): {exc}. Falling back to base_url={CONTAINER_BASE_URL}."
+            )
+
+    if not used_docker_image_mode:
+        # Connect to already-running env endpoint.
         for task_id in TASKS:
             try:
                 async with RedactionEnv(base_url=CONTAINER_BASE_URL) as env:
