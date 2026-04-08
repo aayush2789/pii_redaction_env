@@ -630,10 +630,22 @@ async def main() -> None:
                 for task_id in TASKS:
                     await run_task(client, task_id, env)
         except Exception as exc:
-            _write_log(
-                "[WARN] Docker image mode failed "
-                f"(image={IMAGE_NAME}): {exc}. Falling back to base_url={CONTAINER_BASE_URL}."
+           for task_id in TASKS:
+            log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
+            log_step(
+                step=1,
+                action="ERROR",
+                reward=0.0,
+                done=True,
+                error=f"docker_error:{str(exc)}"
             )
+            log_end(
+                success=False,
+                steps=1,
+                score=0.0,
+                rewards=[0.0]
+            )
+            return
 
     if not used_docker_image_mode:
         # Connect to already-running env endpoint.
