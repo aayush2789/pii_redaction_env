@@ -55,6 +55,10 @@ def compute_grade(
     task_id: str = "unknown",
     success_threshold: float = 0.0,
 ) -> TaskGrade:
+    # Task validators require score to be strictly inside (0, 1).
+    # Keep a 4-decimal-safe epsilon so rounding cannot collapse to 0.0 or 1.0.
+    score_eps = 1e-4
+
     tp, fp, fn, label_correct, label_total = _match_counts(detected, ground_truth)
 
     precision = tp / (tp + fp) if (tp + fp) else 0.0
@@ -72,7 +76,8 @@ def compute_grade(
     utility_score = max(0.0, 1.0 - over_redaction_ratio)
 
     # Weighted score: 50% span detection, 25% label accuracy, 25% utility
-    score = max(0.0, min(1.0, 0.50 * f1 + 0.25 * label_accuracy + 0.25 * utility_score))
+    raw_score = 0.50 * f1 + 0.25 * label_accuracy + 0.25 * utility_score
+    score = max(score_eps, min(1.0 - score_eps, raw_score))
     success = score >= success_threshold
 
     components: Dict[str, float] = {

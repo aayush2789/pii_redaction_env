@@ -24,7 +24,7 @@ def test_compute_grade_matches_expected_f1():
 
     assert grade.f1_final == 1.0
     assert grade.utility_score == 1.0
-    assert grade.score == 1.0
+    assert grade.score == 0.9999
     assert grade.success is True
 
 
@@ -58,7 +58,7 @@ def test_compute_grade_score_is_bounded():
         success_threshold=0.9,
     )
 
-    assert 0.0 <= grade.score <= 1.0
+    assert 0.0 < grade.score < 1.0
 
 
 def test_tasks_define_concrete_objectives():
