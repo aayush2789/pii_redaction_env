@@ -1,0 +1,52 @@
+[START] task=gdpr_contract_easy env=pii_redaction model=moonshotai/kimi-k2-instruct-0905
+[STEP] step=1 action=REDACT(59,69) reward=0.84 done=false error=null
+[STEP] step=2 action=REDACT(45,57) reward=0.75 done=false error=null
+[STEP] step=3 action=REDACT(85,108) reward=0.79 done=false error=null
+[STEP] step=4 action=REDACT(119,131) reward=0.75 done=false error=null
+[STEP] step=5 action=FINISH reward=1.00 done=true error=null
+[END] success=false steps=5 score=0.826 rewards=0.84,0.75,0.79,0.75,1.00 time=8.37s
+[START] task=hipaa_medical_medium env=pii_redaction model=moonshotai/kimi-k2-instruct-0905
+[STEP] step=1 action=REDACT(32,47) reward=0.95 done=false error=null
+[STEP] step=2 action=REDACT(75,87) reward=0.39 done=false error=null
+[STEP] step=3 action=NEXT_CHUNK reward=0.20 done=false error=null
+[STEP] step=4 action=REDACT(114,126) reward=0.81 done=false error=null
+[STEP] step=5 action=SKIP reward=0.50 done=false error=null
+[STEP] step=6 action=SKIP reward=0.47 done=false error=null
+[STEP] step=7 action=SKIP reward=0.45 done=false error=null
+[STEP] step=8 action=PREV_CHUNK reward=0.50 done=false error=nav_recovery_prev
+[STEP] step=9 action=SKIP reward=0.35 done=false error=null
+[STEP] step=10 action=SKIP reward=0.33 done=false error=null
+[STEP] step=11 action=SKIP reward=0.30 done=false error=null
+[STEP] step=12 action=SKIP reward=0.28 done=false error=null
+[STEP] step=13 action=SKIP reward=0.25 done=false error=null
+[STEP] step=14 action=SKIP reward=0.25 done=false error=null
+[STEP] step=15 action=SKIP reward=0.25 done=false error=null
+[STEP] step=16 action=SKIP reward=0.25 done=false error=null
+[STEP] step=17 action=SKIP reward=0.25 done=false error=null
+[STEP] step=18 action=SKIP reward=0.25 done=false error=null
+[STEP] step=19 action=SKIP reward=0.25 done=false error=null
+[STEP] step=20 action=SKIP reward=0.25 done=false error=null
+[STEP] step=21 action=SKIP reward=0.25 done=false error=null
+[STEP] step=22 action=SKIP reward=0.25 done=false error=null
+[STEP] step=23 action=SKIP reward=0.25 done=false error=null
+[STEP] step=24 action=SKIP reward=0.25 done=false error=null
+[STEP] step=25 action=SKIP reward=0.25 done=false error=null
+[STEP] step=26 action=SKIP reward=0.25 done=false error=null
+[STEP] step=27 action=SKIP reward=0.25 done=false error=null
+[STEP] step=28 action=SKIP reward=0.25 done=false error=null
+[STEP] step=29 action=SKIP reward=0.25 done=false error=null
+[STEP] step=30 action=ERROR reward=0.00 done=true error=Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+[END] success=false steps=30 score=0.337 rewards=0.95,0.39,0.20,0.81,0.50,0.47,0.45,0.50,0.35,0.33,0.30,0.28,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25 time=28.89s
+[START] task=security_logs_hard env=pii_redaction model=moonshotai/kimi-k2-instruct-0905
+[STEP] step=1 action=REDACT(56,78) reward=0.92 done=false error=null
+[STEP] step=2 action=REDACT(104,119) reward=0.77 done=false error=null
+[STEP] step=3 action=NEXT_CHUNK reward=0.51 done=false error=null
+[STEP] step=4 action=SKIP reward=0.35 done=false error=null
+[STEP] step=5 action=ERROR reward=0.00 done=true error=Error code: 429 - {'status': 429, 'title': 'Too Many Requests'}
+[END] success=false steps=5 score=0.638 rewards=0.92,0.77,0.51,0.35 time=5.38s
+
+============================================================
+Summary saved to: outputs\summary_20260408_145049.json
+Log file saved to: outputs\inference_20260408_145049.log
+============================================================
+
